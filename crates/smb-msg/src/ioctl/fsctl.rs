@@ -399,10 +399,7 @@ pub struct NetworkInterfaceInfo {
 /// Used in the NetworkInterfaceInfo structure to specify interface capabilities.
 ///
 /// Reference: MS-SMB2 2.2.32.5
-#[bitfield]
-#[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
-#[bw(map = |&x| Self::into_bytes(x))]
-#[br(map = Self::from_bytes)]
+#[smb_dtyp::mbitfield]
 pub struct NetworkInterfaceCapability {
     /// When set, specifies that the interface is RSS (Receive Side Scaling) capable.
     pub rss: bool,

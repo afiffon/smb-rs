@@ -218,10 +218,7 @@ impl Header {
     }
 }
 
-#[bitfield]
-#[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
-#[bw(map = |&x| Self::into_bytes(x))]
-#[br(map = Self::from_bytes)]
+#[smb_dtyp::mbitfield]
 pub struct HeaderFlags {
     pub server_to_redir: bool,
     pub async_command: bool,

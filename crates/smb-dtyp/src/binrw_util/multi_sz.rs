@@ -1,5 +1,5 @@
-//! [MultiWSz](MultiWSz) type for reading and writing multiple null-terminated wide strings.
-//!
+//! [`MultiWSz`] type for reading and writing multiple null-terminated wide strings.
+
 use std::io::Read;
 use std::io::Seek;
 use std::io::Write;

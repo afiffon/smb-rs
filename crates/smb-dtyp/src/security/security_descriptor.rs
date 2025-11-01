@@ -1,7 +1,6 @@
 //! MS-DTYP 2.4.6: Security Descriptor
 
 use binrw::prelude::*;
-use modular_bitfield::prelude::*;
 
 use crate::binrw_util::prelude::*;
 
@@ -56,10 +55,7 @@ pub struct SecurityDescriptor {
     pub dacl: Option<ACL>,
 }
 
-#[bitfield]
-#[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
-#[bw(map = |&x| Self::into_bytes(x))]
-#[br(map = Self::from_bytes)]
+#[smb_dtyp_derive::mbitfield]
 pub struct SecurityDescriptorControl {
     pub owner_defaulted: bool,
     pub group_defaulted: bool,

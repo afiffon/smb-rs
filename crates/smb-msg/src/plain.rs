@@ -2,6 +2,7 @@ use binrw::prelude::*;
 
 use super::header::*;
 use super::*;
+use smb_msg_derive::*;
 
 /// Makes the [`RequestContent`] & [`ResponseContent`] methods
 macro_rules! make_content_impl {
@@ -69,7 +70,8 @@ macro_rules! make_content {
     ) => {
         pastey::paste!{
 
-#[derive(BinRead, BinWrite, Debug)]
+#[smb_request_binrw]
+#[derive(Debug)]
 #[brw(import(command: &Command))]
 #[brw(little)]
 pub enum RequestContent {
@@ -89,7 +91,9 @@ pub enum RequestContent {
     LeaseBreakAck(oplock::LeaseBreakAck),
 }
 
-#[derive(BinRead, BinWrite, Debug)]
+
+#[smb_response_binrw]
+#[derive(Debug)]
 #[brw(import(command: &Command))]
 #[brw(little)]
 pub enum ResponseContent {
@@ -267,7 +271,7 @@ impl RequestContent {
 }
 
 macro_rules! make_plain {
-    ($suffix:ident, $server_to_redir:literal, $binrw_attr:ty) => {
+    ($suffix:ident, $server_to_redir:literal, $binrw_attr:ident) => {
         pastey::paste! {
 
         /// A plain, single, SMB2 message.
@@ -311,16 +315,5 @@ macro_rules! make_plain {
     };
 }
 
-macro_rules! gen_req_resp {
-    ($req_attr:ty, $res_attr:ty) => {
-        make_plain!(Request, false, $req_attr);
-        make_plain!(Response, true, $res_attr);
-    };
-}
-
-#[cfg(all(feature = "server", feature = "client"))]
-gen_req_resp!(binrw::binrw, binrw::binrw);
-#[cfg(all(feature = "client", not(feature = "server")))]
-gen_req_resp!(binrw::binwrite, binrw::binread);
-#[cfg(all(feature = "server", not(feature = "client")))]
-gen_req_resp!(binrw::binread, binrw::binwrite);
+make_plain!(Request, false, smb_request_binrw);
+make_plain!(Response, true, smb_response_binrw);

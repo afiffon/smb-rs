@@ -4,7 +4,7 @@ use std::io::SeekFrom;
 use binrw::io::TakeSeekExt;
 use binrw::prelude::*;
 use modular_bitfield::prelude::*;
-use smb_msg_derive::{smb_request, smb_response};
+use smb_msg_derive::*;
 
 use super::FileId;
 use smb_dtyp::binrw_util::prelude::*;
@@ -20,20 +20,14 @@ pub struct ChangeNotifyRequest {
     _reserved: u32,
 }
 
-#[bitfield]
-#[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
-#[bw(map = |&x| Self::into_bytes(x))]
-#[br(map = Self::from_bytes)]
+#[smb_dtyp::mbitfield]
 pub struct NotifyFlags {
     pub watch_tree: bool,
     #[skip]
     __: B15,
 }
 
-#[bitfield]
-#[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
-#[bw(map = |&x| Self::into_bytes(x))]
-#[br(map = Self::from_bytes)]
+#[smb_dtyp::mbitfield]
 pub struct NotifyFilter {
     pub file_name: bool,
     pub dir_name: bool,

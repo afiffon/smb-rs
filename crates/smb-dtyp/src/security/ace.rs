@@ -3,6 +3,7 @@
 use binrw::io::TakeSeekExt;
 use binrw::prelude::*;
 use modular_bitfield::prelude::*;
+use smb_dtyp_derive::mbitfield;
 
 use crate::{binrw_util::prelude::*, guid::Guid};
 
@@ -254,10 +255,7 @@ pub struct AccessObjectAce {
     pub sid: SID,
 }
 
-#[bitfield]
-#[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
-#[bw(map = |&x| Self::into_bytes(x))]
-#[br(map = Self::from_bytes)]
+#[mbitfield]
 pub struct ObjectAceFlags {
     pub object_type_present: bool,
     pub inherited_object_type_present: bool,
@@ -330,10 +328,7 @@ pub enum ClaimSecurityAttributeType {
     OctetString = 6,
 }
 
-#[bitfield]
-#[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
-#[bw(map = |&x| Self::into_bytes(x))]
-#[br(map = Self::from_bytes)]
+#[mbitfield]
 pub struct FciClaimSecurityAttributes {
     pub non_inheritable: bool,
     pub value_case_sensitive: bool,
@@ -377,10 +372,7 @@ pub enum AceType {
     SystemScopedPolicyId = 19,
 }
 
-#[bitfield]
-#[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
-#[bw(map = |&x| Self::into_bytes(x))]
-#[br(map = Self::from_bytes)]
+#[mbitfield]
 pub struct AceFlags {
     pub object_inherit: bool,
     pub container_inherit: bool,

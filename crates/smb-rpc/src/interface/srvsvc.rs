@@ -118,10 +118,7 @@ pub enum ShareKind {
 /// Share types
 ///
 /// [MS-SRVS](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-srvs/6069f8c0-c93f-43a0-a5b4-7ed447eb4b84>)
-#[bitfield]
-#[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
-#[bw(map = |&x| Self::into_bytes(x))]
-#[br(map = Self::from_bytes)]
+#[smb_dtyp::mbitfield]
 pub struct ShareType {
     pub kind: ShareKind,
     #[skip]

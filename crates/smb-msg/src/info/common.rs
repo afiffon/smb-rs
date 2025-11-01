@@ -13,10 +13,7 @@ pub enum InfoType {
     Quota = 0x4,
 }
 
-#[bitfield]
-#[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
-#[bw(map = |&x| Self::into_bytes(x))]
-#[br(map = Self::from_bytes)]
+#[smb_dtyp::mbitfield]
 pub struct AdditionalInfo {
     pub owner_security_information: bool,
     pub group_security_information: bool,

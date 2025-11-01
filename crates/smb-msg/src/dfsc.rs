@@ -41,10 +41,7 @@ pub struct ReqGetDfsReferralEx {
     pub request_data: DfsRequestData,
 }
 
-#[bitfield]
-#[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
-#[bw(map = |&x| Self::into_bytes(x))]
-#[br(map = Self::from_bytes)]
+#[smb_dtyp::mbitfield]
 pub struct DfsRequestFlags {
     /// SiteName present: The SiteName bit MUST be set to 1 if the packet contains the site name of the client.
     pub site_name: bool,
@@ -105,10 +102,7 @@ impl BinWrite for RespGetDfsReferral {
     }
 }
 
-#[bitfield]
-#[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
-#[bw(map = |&x| Self::into_bytes(x))]
-#[br(map = Self::from_bytes)]
+#[smb_dtyp::mbitfield]
 pub struct ReferralHeaderFlags {
     /// Whether all of the targets in the referral entries returned are DFS root targets capable of handling DFS referral requests.
     pub referral_servers: bool,
@@ -257,10 +251,7 @@ impl ReferralEntryValueV3 {
     pub const COMMON_PART_SIZE: usize = std::mem::size_of::<u16>() * 2 + std::mem::size_of::<u32>();
 }
 
-#[bitfield]
-#[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
-#[bw(map = |&x| Self::into_bytes(x))]
-#[br(map = Self::from_bytes)]
+#[smb_dtyp::mbitfield]
 pub struct ReferralEntryFlags {
     #[skip]
     __: bool,
@@ -372,10 +363,7 @@ pub struct ReferralEntryValueV4 {
 }
 
 /// Internal.
-#[bitfield]
-#[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
-#[bw(map = |&x| Self::into_bytes(x))]
-#[br(map = Self::from_bytes)]
+#[smb_dtyp::mbitfield]
 struct ReferralEntryFlagsV4 {
     #[skip]
     __: B2,

@@ -1,7 +1,7 @@
 //! Directory-related messages.
 
 use binrw::io::TakeSeekExt;
-use smb_msg_derive::{smb_request, smb_response};
+use smb_msg_derive::*;
 use std::io::SeekFrom;
 
 use binrw::prelude::*;
@@ -12,20 +12,42 @@ use smb_fscc::*;
 
 use super::FileId;
 
+/// SMB2 QUERY_DIRECTORY Request packet for obtaining directory enumeration.
+///
+/// This request is sent by the client to obtain a directory enumeration on a
+/// directory open. The client specifies the type of information desired and
+/// can optionally provide a search pattern to filter the results.
+///
+/// Reference: MS-SMB2 section 2.2.33, page 10906442-294c-46d3-8515-c277efe1f752
 #[smb_request(size = 33)]
 pub struct QueryDirectoryRequest {
+    /// The file information class describing the format that data must be returned in.
+    /// Specifies which type of directory information structure should be used for each entry.
     pub file_information_class: QueryDirectoryInfoClass,
+    /// Flags indicating how the query directory operation must be processed.
+    /// Controls behavior such as restarting enumeration or returning single entries.
     pub flags: QueryDirectoryFlags,
+    /// The byte offset within the directory to resume enumeration from.
+    /// Must be supplied when INDEX_SPECIFIED flag is set, otherwise must be zero.
     // If SMB2_INDEX_SPECIFIED is set in Flags, this value MUST be supplied.
     // Otherwise, it MUST be set to zero and the server MUST ignore it.
     #[bw(assert(flags.index_specified() || *file_index == 0))]
     pub file_index: u32,
+    /// Identifier of the directory on which to perform the enumeration.
+    /// This is returned from an SMB2 Create Request to open a directory.
     pub file_id: FileId,
+    /// Offset from the beginning of the SMB2 header to the search pattern.
+    /// Set to zero if no search pattern is provided.
     #[bw(calc = PosMarker::default())]
     pub file_name_offset: PosMarker<u16>,
+    /// Length in bytes of the search pattern.
+    /// Set to zero if no search pattern is provided.
     #[bw(try_calc = file_name.size().try_into())]
     file_name_length: u16, // in bytes.
+    /// The maximum number of bytes the server is allowed to return in the response.
     pub output_buffer_length: u32,
+    /// Unicode search pattern for the request with wildcards and other conventions.
+    /// Format is specified in MS-CIFS section 2.2.1.1.3.
     #[br(seek_before = SeekFrom::Start(file_name_offset.value as u64))]
     // map stream take until eof:
     #[br(args {size: SizedStringSize::bytes16(file_name_length)})]
@@ -33,25 +55,43 @@ pub struct QueryDirectoryRequest {
     pub file_name: SizedWideString,
 }
 
-#[bitfield]
-#[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
-#[bw(map = |&x| Self::into_bytes(x))]
-#[br(map = Self::from_bytes)]
+/// Flags indicating how the query directory operation must be processed.
+///
+/// These flags control the behavior of directory enumeration, such as whether
+/// to restart the scan from the beginning or return only a single entry.
+///
+/// Reference: MS-SMB2 section 2.2.33
+#[smb_dtyp::mbitfield]
 pub struct QueryDirectoryFlags {
+    /// The server is requested to restart the enumeration from the beginning.
     pub restart_scans: bool,
+    /// The server is requested to only return the first entry of the search results.
     pub return_single_entry: bool,
+    /// The server is requested to return entries beginning at the byte number specified by FileIndex.
     pub index_specified: bool,
+    /// The server is requested to restart the enumeration from the beginning, and the search pattern is to be changed.
     pub reopen: bool,
     #[skip]
     __: B4,
 }
 
+/// SMB2 QUERY_DIRECTORY Response packet containing directory enumeration results.
+///
+/// This response is sent by a server in response to an SMB2 QUERY_DIRECTORY Request.
+/// It contains the directory enumeration data in the format specified by the
+/// FileInformationClass in the request.
+///
+/// Reference: MS-SMB2 section 2.2.34
 #[smb_response(size = 9)]
 pub struct QueryDirectoryResponse {
+    /// Offset in bytes from the beginning of the SMB2 header to the directory enumeration data.
     #[bw(calc = PosMarker::default())]
     output_buffer_offset: PosMarker<u16>,
+    /// Length in bytes of the directory enumeration being returned.
     #[bw(try_calc = output_buffer.len().try_into())]
     output_buffer_length: u32,
+    /// Directory enumeration data in the format specified by the FileInformationClass.
+    /// Format is as specified in MS-FSCC section 2.4 for the specific file information class.
     #[br(seek_before = SeekFrom::Start(output_buffer_offset.value as u64))]
     #[br(map_stream = |s| s.take_seek(output_buffer_length as u64), parse_with = binrw::helpers::until_eof)]
     #[bw(write_with = PosMarker::write_aoff, args(&output_buffer_offset))]
@@ -59,6 +99,13 @@ pub struct QueryDirectoryResponse {
 }
 
 impl QueryDirectoryResponse {
+    /// Reads and parses the output buffer as a vector of directory information entries.
+    ///
+    /// See viable types for conversions in the `smb-dtyp` crate - [`QueryDirectoryInfoValue`] implementations.
+    ///
+    /// This method parses the raw output buffer into strongly-typed directory information
+    /// structures based on the type parameter T, which should match the FileInformationClass
+    /// used in the original request.
     pub fn read_output<T>(&self) -> BinResult<Vec<T>>
     where
         T: QueryDirectoryInfoValue + BinRead + BinWrite,

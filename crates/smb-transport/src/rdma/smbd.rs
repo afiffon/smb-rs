@@ -95,10 +95,7 @@ impl SmbdDataTransferHeader {
     pub const DATA_ALIGNMENT: u32 = 8;
 }
 
-#[bitfield]
-#[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
-#[bw(map = |&x| Self::into_bytes(x))]
-#[br(map = Self::from_bytes)]
+#[smb_dtyp::mbitfield]
 pub struct SmbdDataTransferFlags {
     /// The peer is requested to promptly send a message in response. This value is used for keep alives.
     pub response_requested: bool,
