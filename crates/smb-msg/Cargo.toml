@@ -11,6 +11,9 @@ authors.workspace = true
 keywords.workspace = true
 categories.workspace = true
 
+[package.metadata.docs.rs]
+all-features = true
+
 [features]
 default = ["both"]
 client = ["smb-msg-derive/client"]

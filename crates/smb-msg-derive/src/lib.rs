@@ -1,7 +1,12 @@
+//! Utility macros for building SMB messages.
+//!
+//! This should be used only within the `smb-msg` crate.
+//! Common utlities shall be placed in `smb-dtyp-derive` and re-exprorted in `smb-dtyp`.
+
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{
-    Expr, ExprLit, Fields, ItemStruct, Lit, Meta,
+    DeriveInput, Expr, ExprLit, Fields, ItemStruct, Lit, Meta,
     parse::{Parse, ParseStream, Result},
     parse_macro_input,
 };
@@ -121,12 +126,46 @@ fn modify_smb_msg(msg_type: SmbMsgType, item: TokenStream, attr: TokenStream) ->
     })
 }
 
+/// Proc-macro for constructing SMB request messages.
+///
+/// Valid usage is `#[smb_request(size = <u16>)]` before a struct definition.
 #[proc_macro_attribute]
 pub fn smb_request(attr: TokenStream, input: TokenStream) -> TokenStream {
     modify_smb_msg(SmbMsgType::Request, input, attr)
 }
 
+/// Proc-macro for constructing SMB response messages.
+///
+/// Valid usage is `#[smb_response(size = <u16>)]` before a struct definition.
 #[proc_macro_attribute]
 pub fn smb_response(attr: TokenStream, input: TokenStream) -> TokenStream {
     modify_smb_msg(SmbMsgType::Response, input, attr)
+}
+
+/// Proc-macro for adding binrw attributes to SMB request structs.
+///
+/// Conditionally adds `BinRead` or `BinWrite` depending on server/client features.
+#[proc_macro_attribute]
+pub fn smb_request_binrw(_attr: TokenStream, input: TokenStream) -> TokenStream {
+    let item = parse_macro_input!(input as DeriveInput);
+
+    let to_add = SmbMsgType::Request.get_attr();
+    TokenStream::from(quote! {
+        #to_add
+        #item
+    })
+}
+
+/// Proc-macro for adding binrw attributes to SMB response structs.
+///
+/// Conditionally adds `BinRead` or `BinWrite` depending on server/client features.
+#[proc_macro_attribute]
+pub fn smb_response_binrw(_attr: TokenStream, input: TokenStream) -> TokenStream {
+    let item = parse_macro_input!(input as DeriveInput);
+
+    let to_add = SmbMsgType::Response.get_attr();
+    TokenStream::from(quote! {
+        #to_add
+        #item
+    })
 }

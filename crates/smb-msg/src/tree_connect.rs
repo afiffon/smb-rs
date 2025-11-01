@@ -6,10 +6,7 @@ use smb_dtyp::{
     security::{ACL, ClaimSecurityAttributeRelativeV1, SID},
 };
 
-#[bitfield]
-#[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
-#[bw(map = |&x| Self::into_bytes(x))]
-#[br(map = Self::from_bytes)]
+#[smb_dtyp::mbitfield]
 pub struct TreeConnectRequestFlags {
     pub cluster_reconnect: bool,
     pub redirect_to_owner: bool,
@@ -157,10 +154,7 @@ pub struct SidAttrData {
 
 type SidArrayData = ArrayData<SidAttrData>;
 
-#[bitfield]
-#[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
-#[bw(map = |&x| Self::into_bytes(x))]
-#[br(map = Self::from_bytes)]
+#[smb_dtyp::mbitfield]
 pub struct SidAttrSeGroup {
     pub mandatory: bool,
     pub enabled_by_default: bool,
@@ -185,9 +179,7 @@ pub struct LuidAttrData {
 mod lsapr_luid_attributes {
     use super::*;
     /// [MS-LSAD 2.2.5.4](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-lsad/03c834c0-f310-4e0c-832e-b6e7688364d1)
-    #[bitfield]
-    #[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
-    #[br(map = Self::from_bytes)]
+    #[smb_dtyp::mbitfield]
     pub struct LsaprLuidAttributes {
         pub is_default: bool,
         pub is_enabled: bool,
@@ -197,7 +189,7 @@ mod lsapr_luid_attributes {
 }
 
 use lsapr_luid_attributes::LsaprLuidAttributes;
-use smb_msg_derive::{smb_request, smb_response};
+use smb_msg_derive::*;
 
 type PrivilegeData = BlobData<LuidAttrData>;
 
@@ -233,10 +225,7 @@ pub enum ShareCacheMode {
     All = 0xf,
 }
 
-#[bitfield]
-#[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
-#[bw(map = |&x| Self::into_bytes(x))]
-#[br(map = Self::from_bytes)]
+#[smb_dtyp::mbitfield]
 pub struct ShareFlags {
     pub dfs: bool,
     pub dfs_root: bool,
@@ -264,10 +253,7 @@ pub struct ShareFlags {
     __: B10,
 }
 
-#[bitfield]
-#[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
-#[bw(map = |&x| Self::into_bytes(x))]
-#[br(map = Self::from_bytes)]
+#[smb_dtyp::mbitfield]
 pub struct TreeCapabilities {
     #[skip]
     __: B3,

@@ -2,7 +2,7 @@ use binrw::prelude::*;
 use modular_bitfield::prelude::*;
 
 use smb_dtyp::binrw_util::prelude::*;
-use smb_msg_derive::{smb_request, smb_response};
+use smb_msg_derive::*;
 
 #[smb_request(size = 25)]
 pub struct SessionSetupRequest {
@@ -21,10 +21,7 @@ pub struct SessionSetupRequest {
     pub buffer: Vec<u8>,
 }
 
-#[bitfield]
-#[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
-#[bw(map = |&x| Self::into_bytes(x))]
-#[br(map = Self::from_bytes)]
+#[smb_dtyp::mbitfield]
 pub struct SessionSecurityMode {
     pub signing_enabled: bool,
     pub signing_required: bool,
@@ -32,20 +29,14 @@ pub struct SessionSecurityMode {
     __: B6,
 }
 
-#[bitfield]
-#[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
-#[bw(map = |&x| Self::into_bytes(x))]
-#[br(map = Self::from_bytes)]
+#[smb_dtyp::mbitfield]
 pub struct SetupRequestFlags {
     pub binding: bool,
     #[skip]
     __: B7,
 }
 
-#[bitfield]
-#[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
-#[bw(map = |&x| Self::into_bytes(x))]
-#[br(map = Self::from_bytes)]
+#[smb_dtyp::mbitfield]
 pub struct NegotiateCapabilities {
     pub dfs: bool,
     #[skip]
@@ -81,10 +72,7 @@ pub struct SessionSetupResponse {
     pub buffer: Vec<u8>,
 }
 
-#[bitfield]
-#[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
-#[bw(map = |&x| Self::into_bytes(x))]
-#[br(map = Self::from_bytes)]
+#[smb_dtyp::mbitfield]
 pub struct SessionFlags {
     pub is_guest: bool,
     pub is_null_session: bool,

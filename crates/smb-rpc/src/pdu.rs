@@ -3,7 +3,6 @@
 
 use binrw::io::TakeSeekExt;
 use binrw::prelude::*;
-use modular_bitfield::prelude::*;
 use smb_dtyp::Guid;
 use smb_dtyp::binrw_util::prelude::*;
 use smb_dtyp::make_guid;
@@ -171,10 +170,7 @@ pub struct DceRpcVersion {
     pub minor: u8,
 }
 
-#[bitfield]
-#[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
-#[bw(map = |&x| Self::into_bytes(x))]
-#[br(map = Self::from_bytes)]
+#[smb_dtyp::mbitfield]
 
 pub struct DceRpcCoPktFlags {
     pub first_frag: bool,

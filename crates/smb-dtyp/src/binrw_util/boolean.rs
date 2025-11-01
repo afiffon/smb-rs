@@ -1,4 +1,4 @@
-//! [`Boolean`][crate::Boolean] implementation for binrw.
+//! [`Boolean`] implementation for binrw.
 
 use binrw::{Endian, prelude::*};
 use std::io::{Read, Seek, Write};

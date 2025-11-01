@@ -2,7 +2,7 @@ use crate::FileId;
 use binrw::prelude::*;
 use modular_bitfield::prelude::*;
 use smb_dtyp::Guid;
-use smb_msg_derive::{smb_request, smb_response};
+use smb_msg_derive::*;
 
 #[smb_request(size = 12)]
 pub struct OplockBreakMsg {
@@ -41,10 +41,7 @@ pub enum OplockLevel {
     Exclusive = 2,
 }
 
-#[bitfield]
-#[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
-#[bw(map = |&x| Self::into_bytes(x))]
-#[br(map = Self::from_bytes)]
+#[smb_dtyp::mbitfield]
 pub struct LeaseState {
     pub read_caching: bool,
     pub handle_caching: bool,

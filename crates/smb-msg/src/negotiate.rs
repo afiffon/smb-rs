@@ -3,7 +3,7 @@ use binrw::prelude::*;
 use modular_bitfield::prelude::*;
 
 use smb_dtyp::{binrw_util::prelude::*, guid::Guid};
-use smb_msg_derive::{smb_request, smb_response};
+use smb_msg_derive::*;
 
 #[smb_request(size = 36)]
 pub struct NegotiateRequest {
@@ -31,10 +31,7 @@ pub struct NegotiateRequest {
     pub negotiate_context_list: Option<Vec<NegotiateContext>>,
 }
 
-#[bitfield]
-#[derive(BinRead, BinWrite, Debug, Default, Clone, Copy, PartialEq, Eq)]
-#[bw(map = |&x| Self::into_bytes(x))]
-#[br(map = Self::from_bytes)]
+#[smb_dtyp::mbitfield]
 pub struct NegotiateSecurityMode {
     pub signing_enabled: bool,
     pub signing_required: bool,
@@ -42,10 +39,7 @@ pub struct NegotiateSecurityMode {
     __: B14,
 }
 
-#[bitfield]
-#[derive(BinRead, BinWrite, Debug, Default, Clone, Copy, PartialEq, Eq)]
-#[bw(map = |&x| Self::into_bytes(x))]
-#[br(map = Self::from_bytes)]
+#[smb_dtyp::mbitfield]
 pub struct GlobalCapabilities {
     pub dfs: bool,
     pub leasing: bool,
@@ -379,10 +373,7 @@ impl std::fmt::Display for CompressionAlgorithm {
     }
 }
 
-#[bitfield]
-#[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
-#[bw(map = |&x| Self::into_bytes(x))]
-#[br(map = Self::from_bytes)]
+#[smb_dtyp::mbitfield]
 pub struct CompressionCapsFlags {
     pub chained: bool,
     #[skip]
@@ -395,10 +386,7 @@ pub struct NetnameNegotiateContextId {
     pub netname: SizedWideString,
 }
 
-#[bitfield]
-#[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
-#[bw(map = |&x| Self::into_bytes(x))]
-#[br(map = Self::from_bytes)]
+#[smb_dtyp::mbitfield]
 pub struct TransportCapabilities {
     pub accept_transport_layer_security: bool,
     #[skip]

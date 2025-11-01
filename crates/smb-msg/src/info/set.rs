@@ -7,7 +7,7 @@ use binrw::io::TakeSeekExt;
 use binrw::prelude::*;
 use smb_dtyp::{SecurityDescriptor, binrw_util::prelude::*};
 use smb_fscc::*;
-use smb_msg_derive::{smb_request, smb_response};
+use smb_msg_derive::*;
 
 #[smb_request(size = 33)]
 pub struct SetInfoRequest {

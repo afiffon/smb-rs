@@ -24,7 +24,7 @@ pub fn read_u48() -> binrw::BinResult<u64> {
 
 /// Utility binrw parser function that reads an optional value of type `T`
 /// if there is _ANY_ data left in the stream
-/// (any data, not enough data - for Option<u32> it's 1 byte in the stream).
+/// (any data, not enough data - even for [`Option<u32>`] it's 1 byte in the stream).
 #[binrw::parser(reader, endian)]
 pub fn binread_if_has_data<T>() -> BinResult<Option<T>>
 where

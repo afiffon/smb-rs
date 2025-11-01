@@ -1,7 +1,7 @@
 use super::FileId;
 use binrw::prelude::*;
 use modular_bitfield::prelude::*;
-use smb_msg_derive::{smb_request, smb_response};
+use smb_msg_derive::*;
 
 #[smb_request(size = 48)]
 pub struct LockRequest {
@@ -13,10 +13,7 @@ pub struct LockRequest {
     pub locks: Vec<LockElement>,
 }
 
-#[bitfield]
-#[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
-#[bw(map = |&x| Self::into_bytes(x))]
-#[br(map = Self::from_bytes)]
+#[smb_dtyp::mbitfield]
 pub struct LockSequence {
     pub number: B4,
     pub index: B28,
@@ -32,10 +29,7 @@ pub struct LockElement {
     _reserved: u32,
 }
 
-#[bitfield]
-#[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
-#[bw(map = |&x| Self::into_bytes(x))]
-#[br(map = Self::from_bytes)]
+#[smb_dtyp::mbitfield]
 pub struct LockFlag {
     pub shared: bool,
     pub exclusive: bool,

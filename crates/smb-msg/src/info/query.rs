@@ -5,8 +5,7 @@ use crate::query_info_data;
 use binrw::{io::TakeSeekExt, prelude::*};
 use modular_bitfield::prelude::*;
 use smb_dtyp::{SID, SecurityDescriptor, binrw_util::prelude::*};
-use smb_msg_derive::smb_request;
-use smb_msg_derive::smb_response;
+use smb_msg_derive::*;
 use std::io::{Cursor, SeekFrom};
 
 use super::common::*;
@@ -77,10 +76,7 @@ impl AdditionalInfo {
     }
 }
 
-#[bitfield]
-#[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
-#[bw(map = |&x| Self::into_bytes(x))]
-#[br(map = Self::from_bytes)]
+#[smb_dtyp::mbitfield]
 pub struct QueryInfoFlags {
     pub restart_scan: bool,
     pub return_single_entry: bool,

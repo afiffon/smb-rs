@@ -10,10 +10,7 @@ use modular_bitfield::prelude::*;
 /// They can be used in any combination unless noted in the description of the attribute's meaning
 ///
 /// [MS-FSCC 2.6](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/ca28ec38-f155-4768-81d6-4bfeb8586fc9>)
-#[bitfield]
-#[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
-#[bw(map = |&x| Self::into_bytes(x))]
-#[br(map = Self::from_bytes)]
+#[smb_dtyp::mbitfield]
 pub struct FileAttributes {
     /// A file or directory that is read-only.
     /// For a file, applications can read the file but cannot write to it or delete it.

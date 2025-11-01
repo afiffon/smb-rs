@@ -58,10 +58,7 @@ pub struct FileFullEaInformationInner {
 /// Extended Attribute (EA) Flags
 ///
 /// See [`FileFullEaInformationInner`]
-#[bitfield]
-#[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
-#[bw(map = |&x| Self::into_bytes(x))]
-#[br(map = Self::from_bytes)]
+#[smb_dtyp::mbitfield]
 #[repr(u8)]
 pub struct EaFlags {
     #[skip]
@@ -75,10 +72,7 @@ pub type FileFullEaInformation = ChainedItemList<FileFullEaInformationInner, 4>;
 /// Query or Set file mode information.
 ///
 /// [MS-FSCC 2.4.31](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/52df7798-8330-474b-ac31-9afe8075640c>)
-#[bitfield]
-#[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
-#[bw(map = |&x| Self::into_bytes(x))]
-#[br(map = Self::from_bytes)]
+#[smb_dtyp::mbitfield]
 pub struct FileModeInformation {
     #[skip]
     __: bool,

@@ -4,7 +4,7 @@ use std::io::SeekFrom;
 
 use binrw::prelude::*;
 use modular_bitfield::prelude::*;
-use smb_msg_derive::{smb_request, smb_response};
+use smb_msg_derive::*;
 
 use super::FileId;
 use super::header::Header;
@@ -88,10 +88,7 @@ impl ReadResponse {
     const STRUCT_SIZE: usize = 17;
 }
 
-#[bitfield]
-#[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
-#[bw(map = |&x| Self::into_bytes(x))]
-#[br(map = Self::from_bytes)]
+#[smb_dtyp::mbitfield]
 pub struct ReadFlags {
     pub read_unbuffered: bool,
     pub read_compressed: bool,
@@ -173,10 +170,7 @@ pub struct WriteResponse {
     _write_channel_info_length: u16,
 }
 
-#[bitfield]
-#[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
-#[bw(map = |&x| Self::into_bytes(x))]
-#[br(map = Self::from_bytes)]
+#[smb_dtyp::mbitfield]
 pub struct WriteFlags {
     pub write_unbuffered: bool,
     pub write_through: bool,

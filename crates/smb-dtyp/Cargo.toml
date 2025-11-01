@@ -17,6 +17,7 @@ modular-bitfield = { workspace = true }
 time = { workspace = true }
 pastey = { workspace = true }
 rand = { workspace = true }
+smb-dtyp-derive = { path = "../smb-dtyp-derive", version = "0.10.3" }
 
 [dev-dependencies]
 smb-tests = { path = "../smb-tests", version = "0.10.4" }
