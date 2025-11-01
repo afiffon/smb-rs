@@ -2,13 +2,10 @@ use crate::FileId;
 use binrw::prelude::*;
 use modular_bitfield::prelude::*;
 use smb_dtyp::Guid;
+use smb_msg_derive::{smb_request, smb_response};
 
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_request(size = 12)]
 pub struct OplockBreakMsg {
-    #[bw(calc = 24)]
-    #[br(assert(_structure_size == 24))]
-    _structure_size: u16,
     oplock_level: u8,
     #[bw(calc = 0)]
     _reserved: u8,
@@ -17,12 +14,8 @@ pub struct OplockBreakMsg {
     file_id: FileId,
 }
 
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_response(size = 44)]
 pub struct LeaseBreakNotify {
-    #[bw(calc = 44)]
-    #[br(assert(_structure_size == 44))]
-    _structure_size: u16,
     new_epoch: u16,
     ack_required: u32,
     lease_key: Guid,
@@ -65,12 +58,8 @@ pub type OplockBreakNotify = OplockBreakMsg;
 pub type OplockBreakAck = OplockBreakMsg;
 pub type OplockBreakResponse = OplockBreakMsg;
 
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_response(size = 36)]
 pub struct LeaseBreakAckResponse {
-    #[bw(calc = 36)]
-    #[br(assert(_structure_size == 36))]
-    _structure_size: u16,
     #[bw(calc = 0)]
     _reserved: u16,
     #[bw(calc = 0)] // reserved

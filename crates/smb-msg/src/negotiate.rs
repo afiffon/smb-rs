@@ -3,13 +3,10 @@ use binrw::prelude::*;
 use modular_bitfield::prelude::*;
 
 use smb_dtyp::{binrw_util::prelude::*, guid::Guid};
+use smb_msg_derive::{smb_request, smb_response};
 
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_request(size = 36)]
 pub struct NegotiateRequest {
-    #[bw(calc = 0x24)]
-    #[br(assert(_structure_size == 0x24))]
-    _structure_size: u16,
     #[bw(try_calc(u16::try_from(dialects.len())))]
     dialect_count: u16,
     pub security_mode: NegotiateSecurityMode,
@@ -64,12 +61,8 @@ pub struct GlobalCapabilities {
     __: B24,
 }
 
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_response(size = 65)]
 pub struct NegotiateResponse {
-    #[br(assert(_structure_size == 0x41))]
-    #[bw(calc = 0x41)]
-    _structure_size: u16,
     pub security_mode: NegotiateSecurityMode,
     pub dialect_revision: NegotiateDialect,
     #[bw(try_calc(u16::try_from(negotiate_context_list.as_ref().map(|v| v.len()).unwrap_or(0))))]

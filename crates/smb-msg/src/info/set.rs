@@ -7,13 +7,10 @@ use binrw::io::TakeSeekExt;
 use binrw::prelude::*;
 use smb_dtyp::{SecurityDescriptor, binrw_util::prelude::*};
 use smb_fscc::*;
+use smb_msg_derive::{smb_request, smb_response};
 
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_request(size = 33)]
 pub struct SetInfoRequest {
-    #[bw(calc = 33)]
-    #[br(assert(_structure_size == 33))]
-    _structure_size: u16,
     #[bw(calc = data.info_type())]
     pub info_type: InfoType,
     pub info_class: SetInfoClass,
@@ -90,13 +87,9 @@ impl SetInfoData {
     }
 }
 
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
-pub struct SetInfoResponse {
-    #[bw(calc = 2)]
-    #[br(assert(_structure_size == 2))]
-    _structure_size: u16,
-}
+#[smb_response(size = 2)]
+#[derive(Default)]
+pub struct SetInfoResponse {}
 
 #[cfg(test)]
 mod tests {

@@ -2,13 +2,10 @@ use binrw::prelude::*;
 use modular_bitfield::prelude::*;
 
 use smb_dtyp::binrw_util::prelude::*;
+use smb_msg_derive::{smb_request, smb_response};
 
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_request(size = 25)]
 pub struct SessionSetupRequest {
-    #[bw(calc = 25)]
-    #[br(assert(_structure_size == 25))]
-    _structure_size: u16,
     pub flags: SetupRequestFlags,
     pub security_mode: SessionSecurityMode,
     pub capabilities: NegotiateCapabilities,
@@ -72,12 +69,8 @@ impl SessionSetupRequest {
     }
 }
 
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_response(size = 9)]
 pub struct SessionSetupResponse {
-    #[bw(calc = 9)]
-    #[br(assert(_structure_size == 9))]
-    _structure_size: u16,
     pub session_flags: SessionFlags,
     #[bw(calc = PosMarker::default())]
     _security_buffer_offset: PosMarker<u16>,
@@ -106,22 +99,16 @@ impl SessionFlags {
     }
 }
 
-#[binrw::binrw]
-#[derive(Debug, Default)]
+#[smb_request(size = 4)]
+#[derive(Default)]
 pub struct LogoffRequest {
-    #[bw(calc = 4)]
-    #[br(assert(_structure_size == 4))]
-    _structure_size: u16,
     #[bw(calc = 0)]
     _reserved: u16,
 }
 
-#[binrw::binrw]
-#[derive(Debug)]
+#[smb_response(size = 4)]
+#[derive(Default)]
 pub struct LogoffResponse {
-    #[bw(calc = 4)]
-    #[br(assert(_structure_size == 4))]
-    _structure_size: u16,
     #[bw(calc = 0)]
     _reserved: u16,
 }

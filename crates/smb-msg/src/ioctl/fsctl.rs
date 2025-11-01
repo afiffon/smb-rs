@@ -36,16 +36,25 @@ pub enum FsctlCodes {
     QueryAllocatedRanges = 0x000940CF,
 }
 
-/// The Length of source/dest keys in SrvCopyChunk* FSCTLs contents.
-/// MS-SMB 2.2.31.1
+/// Request packet for initiating a server-side copy of data.
+/// Sent in an SMB2 IOCTL Request using FSCTL_SRV_COPYCHUNK or FSCTL_SRV_COPYCHUNK_WRITE.
+///
+/// Reference: MS-SMB2 2.2.31.1
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 pub struct SrvCopychunkCopy {
+    /// A key representing the source file for the copy operation.
+    /// Obtained from the server in a SRV_REQUEST_RESUME_KEY Response.
     pub source_key: [u8; SrvCopychunkCopy::SRV_KEY_LENGTH],
+    /// The number of chunks of data that are to be copied.
     #[bw(try_calc = chunks.len().try_into())]
     chunk_count: u32,
+    /// Reserved field. Must not be used and must be reserved.
+    /// This field must be set to zero by the client, and ignored by the server.
     #[bw(calc = 0)]
     _reserved: u32,
+    /// An array of SRV_COPYCHUNK packets describing the ranges to be copied.
+    /// The array length must equal chunk_count * size of SRV_COPYCHUNK.
     #[br(count = chunk_count)]
     pub chunks: Vec<SrvCopychunkItem>,
 }
@@ -55,12 +64,22 @@ impl SrvCopychunkCopy {
     pub const SIZE: usize = Self::SRV_KEY_LENGTH + 4 + 4;
 }
 
+/// Individual data range descriptor for server-side copy operations.
+/// Sent in the chunks array of a SRV_COPYCHUNK_COPY packet to describe an individual data range to copy.
+///
+/// Reference: MS-SMB2 2.2.31.1.1
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 pub struct SrvCopychunkItem {
+    /// The offset, in bytes, from the beginning of the source file to the location
+    /// from which the data will be copied.
     pub source_offset: u64,
+    /// The offset, in bytes, from the beginning of the destination file to where
+    /// the data will be copied.
     pub target_offset: u64,
+    /// The number of bytes of data to copy.
     pub length: u32,
+    /// Reserved field. Should be set to zero and must be ignored on receipt.
     #[bw(calc = 0)]
     _reserved: u32,
 }
@@ -75,17 +94,26 @@ impl IoctlRequestContent for SrvCopychunkCopy {
     }
 }
 
+/// Request packet for retrieving data from the Content Information File associated with a specified file.
+/// Sent in an SMB2 IOCTL Request using FSCTL_SRV_READ_HASH.
+/// The request is not valid for the SMB 2.0.2 dialect.
+///
+/// Reference: MS-SMB2 2.2.31.2
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 pub struct SrvReadHashReq {
-    /// Hash type MUST be 1 (SRV_HASH_TYPE_PEER_DIST)
+    /// The hash type of the request indicating what the hash is used for.
+    /// Must be set to SRV_HASH_TYPE_PEER_DIST for branch caching.
     #[bw(calc = 1)]
     #[br(assert(hash_type == 1))]
     pub hash_type: u32,
-    /// Hash version MUST be 1 or 2
+    /// The version number of the algorithm used to create the Content Information.
+    /// Must be set to version 1 (branch cache version 1) or version 2 (branch cache version 2).
+    /// Version 2 is only applicable for the SMB 3.x dialect family.
     #[br(assert((1..=2).contains(&hash_version)))]
     #[bw(assert((1..=2).contains(hash_version)))]
     pub hash_version: u32,
+    /// Indicates the nature of the offset field and how it should be interpreted.
     pub hash_retrieval_type: SrvHashRetrievalType,
 }
 
@@ -95,20 +123,36 @@ impl IoctlRequestContent for SrvReadHashReq {
     }
 }
 
+/// Enum specifying the nature of the offset field in SRV_READ_HASH requests.
+/// Determines how the offset field should be interpreted for hash retrieval.
+///
+/// Reference: MS-SMB2 2.2.31.2
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 #[brw(repr(u32))]
 pub enum SrvHashRetrievalType {
+    /// The offset field in the SRV_READ_HASH request is relative to the beginning
+    /// of the Content Information File.
     HashBased = 1,
+    /// The offset field in the SRV_READ_HASH request is relative to the beginning
+    /// of the file indicated by the FileId field in the IOCTL request.
+    /// This value is only applicable for the SMB 3.x dialect family.
     FileBased = 2,
 }
 
-/// Sent to request resiliency for a specified open file. This request is not valid for the SMB 2.0.2 dialect.
+/// Request packet for requesting resiliency for a specified open file.
+/// Sent in an SMB2 IOCTL Request using FSCTL_LMR_REQUEST_RESILIENCY.
+/// This request is not valid for the SMB 2.0.2 dialect.
+///
+/// Reference: MS-SMB2 2.2.31.3
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 pub struct NetworkResiliencyRequest {
-    /// The requested time the server holds the file open after a disconnect before releasing it. This time is in milliseconds.
+    /// The requested time the server holds the file open after a disconnect before releasing it.
+    /// This time is in milliseconds.
     pub timeout: u32,
+    /// Reserved field. Must not be used and must be reserved.
+    /// The client must set this to zero, and the server must ignore it on receipt.
     #[bw(calc = 0)]
     pub _reserved: u32,
 }
@@ -119,14 +163,25 @@ impl IoctlRequestContent for NetworkResiliencyRequest {
     }
 }
 
+/// Request packet for validating a previous SMB 2 NEGOTIATE.
+/// Used in FSCTL_VALIDATE_NEGOTIATE_INFO to ensure the negotiation was not tampered with.
+/// Valid for clients and servers implementing SMB 3.0 and SMB 3.0.2 dialects.
+///
+/// Reference: MS-SMB2 2.2.31.4
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 pub struct ValidateNegotiateInfoRequest {
+    /// The capabilities of the client.
     pub capabilities: u32,
+    /// The ClientGuid of the client.
     pub guid: Guid,
+    /// The security mode of the client.
     pub security_mode: NegotiateSecurityMode,
+    /// The number of entries in the dialects field.
     #[bw(try_calc = dialects.len().try_into())]
     dialect_count: u16,
+    /// The list of SMB2 dialects supported by the client.
+    /// These entries should contain only the dialect values defined in the negotiate request.
     #[br(count = dialect_count)]
     pub dialects: Vec<Dialect>,
 }
@@ -141,13 +196,26 @@ impl IoctlRequestContent for ValidateNegotiateInfoRequest {
     }
 }
 
+/// Response packet containing snapshots associated with a share.
+/// Returned by the server in an SMB2 IOCTL Response for FSCTL_SRV_ENUMERATE_SNAPSHOTS request.
+/// Contains all revision timestamps associated with the Tree Connect share.
+///
+/// Reference: MS-SMB2 2.2.32.2
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 pub struct SrvSnapshotArray {
+    /// The number of previous versions associated with the volume that backs this file.
     pub number_of_snap_shots: u32,
+    /// The number of previous version timestamps returned in the snapshots array.
+    /// If the output buffer could not accommodate the entire array, this will be zero.
     pub number_of_snap_shots_returned: u32,
+    /// Position marker for the size of the snapshots array in bytes.
+    /// If the output buffer is too small, this will be the amount of space the array would have occupied.
     #[bw(calc = PosMarker::default())]
     pub snap_shot_array_size: PosMarker<u32>,
+    /// An array of timestamps in GMT format (@GMT token), separated by UNICODE null characters
+    /// and terminated by two UNICODE null characters. Empty if the output buffer could not
+    /// accommodate the entire array.
     #[br(parse_with = binrw::helpers::until_eof, map_stream = |s| s.take_seek(snap_shot_array_size.value as u64))]
     #[bw(write_with = PosMarker::write_size, args(&snap_shot_array_size))]
     pub snap_shots: Vec<NullWideString>,
@@ -166,13 +234,23 @@ macro_rules! impl_fsctl_response {
     };
 }
 
+/// Response packet containing a resume key for server-side copy operations.
+/// Returned by the server in an SMB2 IOCTL Response for FSCTL_SRV_REQUEST_RESUME_KEY request.
+/// The resume key can be used to uniquely identify the source file in subsequent copy operations.
+///
+/// Reference: MS-SMB2 2.2.32.3
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 pub struct SrvRequestResumeKey {
+    /// A 24-byte resume key generated by the server that can be used by the client
+    /// to uniquely identify the source file in FSCTL_SRV_COPYCHUNK or FSCTL_SRV_COPYCHUNK_WRITE requests.
+    /// The resume key must be treated as an opaque structure.
     pub resume_key: [u8; SrvCopychunkCopy::SRV_KEY_LENGTH],
+    /// The length, in bytes, of the context information. This field is unused.
+    /// The server must set this field to zero, and the client must ignore it on receipt.
     #[bw(calc = 0)]
     context_length: u32,
-    /// This should always be set to empty, according to MS-SMB2 2.2.32.3
+    /// The context extended information. This should always be set to empty according to the specification.
     #[br(count = context_length)]
     #[bw(assert(context.len() == context_length as usize))]
     pub context: Vec<u8>,
@@ -180,65 +258,114 @@ pub struct SrvRequestResumeKey {
 
 impl_fsctl_response!(SrvRequestResumeKey, SrvRequestResumeKey);
 
+/// Response packet for server-side copy operations.
+/// Returned by the server in an SMB2 IOCTL Response for FSCTL_SRV_COPYCHUNK or
+/// FSCTL_SRV_COPYCHUNK_WRITE requests to provide the results of the copy operation.
+///
+/// Reference: MS-SMB2 2.2.32.1
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 pub struct SrvCopychunkResponse {
+    /// For successful operations: the number of chunks that were successfully written.
+    /// For STATUS_INVALID_PARAMETER: the maximum number of chunks the server will accept.
     pub chunks_written: u32,
+    /// For successful operations: the number of bytes written in the last chunk that
+    /// did not successfully process (if a partial write occurred).
+    /// For STATUS_INVALID_PARAMETER: the maximum number of bytes the server will allow
+    /// to be written in a single chunk.
     pub chunk_bytes_written: u32,
+    /// For successful operations: the total number of bytes written in the server-side copy operation.
+    /// For STATUS_INVALID_PARAMETER: the maximum number of bytes the server will accept
+    /// to copy in a single request.
     pub total_bytes_written: u32,
 }
 
 impl_fsctl_response!(SrvCopychunk, SrvCopychunkResponse);
 
+/// Response packet for SRV_READ_HASH requests.
+/// Returned by the server in an SMB2 IOCTL Response for FSCTL_SRV_READ_HASH request.
+/// The response is not valid for the SMB 2.0.2 dialect.
+///
+/// Reference: MS-SMB2 2.2.32.4
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 pub struct SrvReadHashRes {
-    /// Hash type MUST be 1 (SRV_HASH_TYPE_PEER_DIST)
+    /// The hash type of the response. Must be set to SRV_HASH_TYPE_PEER_DIST for branch caching.
     #[bw(calc = 1)]
     #[br(assert(hash_type == 1))]
     hash_type: u32,
-    /// Hash version MUST be 1 or 2
+    /// The version number of the algorithm used to create the Content Information.
+    /// Must be version 1 (branch cache version 1) or version 2 (branch cache version 2).
     #[br(assert((1..=2).contains(&hash_version)))]
     #[bw(assert((1..=2).contains(hash_version)))]
     hash_version: u32,
+    /// The last change time of the source file.
     source_file_change_time: FileTime,
+    /// The size of the source file in bytes.
     source_file_size: u64,
+    /// Position marker for the length of the hash blob.
     hash_blob_length: PosMarker<u32>,
+    /// Position marker for the offset of the hash blob.
     hash_blob_offset: PosMarker<u32>,
+    /// Indicates whether the file has been modified since the Content Information was generated.
     dirty: u16,
+    /// The length of the source file name in bytes.
     #[bw(try_calc = source_file_name.len().try_into())]
     source_file_name_length: u16,
+    /// The name of the source file.
     #[br(count = source_file_name_length)]
     source_file_name: Vec<u8>,
 }
 
 impl_fsctl_response!(SrvReadHash, SrvReadHashRes);
 
+/// Hash-based response format for SRV_READ_HASH when HashRetrievalType is SRV_HASH_RETRIEVE_HASH_BASED.
+/// Contains a portion of the Content Information File retrieved from a specified offset.
+///
+/// Reference: MS-SMB2 2.2.32.4.2
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 pub struct SrvHashRetrieveHashBased {
+    /// The offset, in bytes, from the beginning of the Content Information File
+    /// to the portion retrieved. This equals the offset field in the SRV_READ_HASH request.
     pub offset: u64,
+    /// The length, in bytes, of the retrieved portion of the Content Information File.
     #[bw(try_calc = blob.len().try_into())]
     buffer_length: u32,
+    /// Reserved field. Must not be used and must be reserved.
+    /// The server must set this field to zero, and the client must ignore it on receipt.
     #[bw(calc = 0)]
     _reserved: u32,
-    /// TODO: Parse as Content Information File
+    /// A variable-length buffer that contains the retrieved portion of the Content Information File.
+    /// TODO: Parse as Content Information File as specified in MS-PCCRC section 2.3.
     #[br(count = buffer_length)]
     blob: Vec<u8>,
 }
 
 impl_fsctl_response!(SrvReadHash, SrvHashRetrieveHashBased);
 
+/// File-based response format for SRV_READ_HASH when HashRetrievalType is SRV_HASH_RETRIEVE_FILE_BASED.
+/// Valid for servers implementing the SMB 3.x dialect family.
+/// Contains hash information for a specified range of file data.
+///
+/// Reference: MS-SMB2 2.2.32.4.3
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 pub struct SrvHashRetrieveFileBased {
+    /// File data offset corresponding to the start of the hash data returned.
     pub file_data_offset: u64,
+    /// The length, in bytes, starting from the file_data_offset that is covered
+    /// by the hash data returned.
     pub file_data_length: u64,
+    /// The length, in bytes, of the retrieved portion of the Content Information File.
     #[bw(try_calc = buffer.len().try_into())]
     buffer_length: u32,
+    /// Reserved field. Must not be used and must be reserved.
+    /// The server must set this field to zero, and the client must ignore it on receipt.
     #[bw(calc = 0)]
     _reserved: u32,
-    /// TODO: Parse as Content Information File
+    /// A variable-length buffer that contains the retrieved portion of the Content Information File.
+    /// TODO: Parse as Content Information File as specified in MS-PCCRC section 2.4.
     #[br(count = buffer_length)]
     pub buffer: Vec<u8>,
 }
@@ -247,25 +374,41 @@ pub type NetworkInterfacesInfo = ChainedItemList<NetworkInterfaceInfo>;
 
 impl_fsctl_response!(QueryNetworkInterfaceInfo, NetworkInterfacesInfo);
 
+/// Network interface information structure returned by FSCTL_QUERY_NETWORK_INTERFACE_INFO.
+/// Contains details about a specific network interface on the server.
+///
+/// Reference: MS-SMB2 2.2.32.5
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 pub struct NetworkInterfaceInfo {
+    /// The network interface index that specifies the network interface.
     pub if_index: u32,
+    /// The capabilities of the network interface, including RSS and RDMA capability flags.
     pub capability: NetworkInterfaceCapability,
+    /// Reserved field. Must be set to zero and the client must ignore it on receipt.
     #[bw(calc = 0)]
     _reserved: u32,
+    /// The speed of the network interface in bits per second.
     pub link_speed: u64,
-    // -- Inlined sockadd_storage for convenience and performance
+    /// Socket address information describing the network interface address.
+    /// Inlined sockaddr_storage for convenience and performance.
     pub sockaddr: SocketAddrStorage,
 }
 
+/// Capability flags for network interfaces indicating supported features.
+/// Used in the NetworkInterfaceInfo structure to specify interface capabilities.
+///
+/// Reference: MS-SMB2 2.2.32.5
 #[bitfield]
 #[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
 #[bw(map = |&x| Self::into_bytes(x))]
 #[br(map = Self::from_bytes)]
 pub struct NetworkInterfaceCapability {
+    /// When set, specifies that the interface is RSS (Receive Side Scaling) capable.
     pub rss: bool,
+    /// When set, specifies that the interface is RDMA (Remote Direct Memory Access) capable.
     pub rdma: bool,
+    /// Reserved bits. Must be zero.
     #[skip]
     __: B30,
 }
@@ -325,12 +468,21 @@ impl SocketAddrStorageV6 {
     }
 }
 
+/// Response for validating a previous SMB 2 NEGOTIATE.
+/// Returned in an SMB2 IOCTL response for FSCTL_VALIDATE_NEGOTIATE_INFO request.
+/// Valid for servers implementing the SMB 3.x dialect family, optional for others.
+///
+/// Reference: MS-SMB2 2.2.32.6
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 pub struct ValidateNegotiateInfoResponse {
+    /// The capabilities of the server.
     pub capabilities: u32,
+    /// The ServerGuid of the server.
     pub guid: Guid,
+    /// The security mode of the server.
     pub security_mode: NegotiateSecurityMode,
+    /// The SMB2 dialect in use by the server on the connection.
     pub dialect: Dialect,
 }
 

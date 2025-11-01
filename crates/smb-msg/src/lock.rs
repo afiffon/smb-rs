@@ -1,13 +1,10 @@
 use super::FileId;
 use binrw::prelude::*;
 use modular_bitfield::prelude::*;
+use smb_msg_derive::{smb_request, smb_response};
 
-#[binrw::binrw]
-#[derive(Debug)]
+#[smb_request(size = 48)]
 pub struct LockRequest {
-    #[bw(calc = 48)]
-    #[br(assert(_structure_size == 48))]
-    _structure_size: u16,
     #[bw(try_calc = locks.len().try_into())]
     lock_count: u16,
     pub lock_sequence: LockSequence,
@@ -26,7 +23,7 @@ pub struct LockSequence {
 }
 
 #[binrw::binrw]
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct LockElement {
     pub offset: u64,
     pub length: u64,
@@ -48,12 +45,9 @@ pub struct LockFlag {
     __: B28,
 }
 
-#[binrw::binrw]
-#[derive(Debug)]
+#[smb_response(size = 4)]
+#[derive(Default)]
 pub struct LockResponse {
-    #[bw(calc = 4)]
-    #[br(assert(_structure_size == 4))]
-    pub _structure_size: u16,
     #[bw(calc = 0)]
     pub _reserved: u16,
 }

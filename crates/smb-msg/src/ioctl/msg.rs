@@ -6,6 +6,7 @@ use binrw::io::TakeSeekExt;
 use binrw::prelude::*;
 use modular_bitfield::prelude::*;
 use smb_dtyp::binrw_util::prelude::*;
+use smb_msg_derive::{smb_request, smb_response};
 use std::io::SeekFrom;
 
 use crate::{
@@ -13,12 +14,8 @@ use crate::{
     dfsc::{ReqGetDfsReferral, ReqGetDfsReferralEx, RespGetDfsReferral},
 };
 
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_request(size = 57)]
 pub struct IoctlRequest {
-    #[bw(calc = 57)]
-    #[br(assert(struct_size == 57))]
-    struct_size: u16,
     #[bw(calc = 0)]
     _reserved: u16,
     pub ctl_code: u32,
@@ -60,11 +57,19 @@ macro_rules! ioctl_req_data {
 #[br(import(ctl_code: u32, flags: IoctlRequestFlags))]
 pub enum IoctlReqData {
     $(
+        #[doc = concat!(
+            "Ioctl request for FSCTL code `",
+            stringify!($fsctl),
+            "`."
+        )]
         #[br(pre_assert(ctl_code == FsctlCodes::$fsctl as u32 && flags.is_fsctl()))]
         [<Fsctl $fsctl:camel>]($model),
     )+
 
-    /// General Ioctl request, providing a buffer as an input.
+    /// General, non-smb FSCTL ioctl buffer.
+    ///
+    /// In case of an unsupported FSCTL code, this variant can be used to
+    /// pass raw bytes.
     Ioctl(IoctlBuffer),
 }
 
@@ -127,12 +132,8 @@ pub struct IoctlRequestFlags {
     __: B31,
 }
 
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_response(size = 49)]
 pub struct IoctlResponse {
-    #[bw(calc = 49)]
-    #[br(assert(struct_size == 49))]
-    struct_size: u16,
     #[bw(calc = 0)]
     _reserved: u16,
     pub ctl_code: u32,
