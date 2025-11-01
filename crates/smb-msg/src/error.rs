@@ -3,14 +3,10 @@
 use binrw::prelude::*;
 
 use smb_dtyp::binrw_util::prelude::*;
+use smb_msg_derive::smb_response;
 
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_response(size = 9)]
 pub struct ErrorResponse {
-    #[bw(calc = 9)]
-    #[br(assert(_structure_size == 9))]
-    _structure_size: u16,
-
     #[bw(try_calc = error_data.len().try_into())]
     _error_context_count: u8,
 

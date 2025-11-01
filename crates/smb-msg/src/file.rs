@@ -4,17 +4,14 @@ use std::io::SeekFrom;
 
 use binrw::prelude::*;
 use modular_bitfield::prelude::*;
+use smb_msg_derive::{smb_request, smb_response};
 
 use super::FileId;
 use super::header::Header;
 use smb_dtyp::binrw_util::prelude::*;
 
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_request(size = 24)]
 pub struct FlushRequest {
-    #[bw(calc = 24)]
-    #[br(assert(_structure_size == 24))]
-    _structure_size: u16,
     #[bw(calc = 0)]
     _reserved1: u16,
     #[bw(calc = 0)]
@@ -22,22 +19,15 @@ pub struct FlushRequest {
     pub file_id: FileId,
 }
 
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_response(size = 4)]
+#[derive(Default)]
 pub struct FlushResponse {
-    #[bw(calc = 4)]
-    #[br(assert(_structure_size == 4))]
-    _structure_size: u16,
     #[bw(calc = 0)]
     _reserved: u16,
 }
 
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_request(size = 49)]
 pub struct ReadRequest {
-    #[bw(calc = 49)]
-    #[br(assert(_structure_size == 49))]
-    _structure_size: u16,
     #[bw(calc = 0)]
     _padding: u8,
     pub flags: ReadFlags,
@@ -66,12 +56,8 @@ pub struct ReadRequest {
     _pad_blob_placeholder: u8,
 }
 
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_response(size = 17)]
 pub struct ReadResponse {
-    #[bw(calc = Self::STRUCT_SIZE as u16)]
-    #[br(assert(_structure_size == Self::STRUCT_SIZE as u16))]
-    _structure_size: u16,
     // Sanity check: The offset is from the SMB header beginning.
     // it should be greater than the sum of the header and the response.
     // the STRUCT_SIZE includes the first byte of the buffer, so the offset is validated against a byte before that.
@@ -128,13 +114,9 @@ pub enum CommunicationChannel {
 /// i.e. the data is not included in the message, but is sent separately.
 ///
 /// **note:** it is currently assumed that the data is sent immediately after the message.
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_request(size = 49)]
 #[allow(clippy::manual_non_exhaustive)]
 pub struct WriteRequest {
-    #[bw(calc = 49)]
-    #[br(assert(_structure_size == 49))]
-    _structure_size: u16,
     /// internal buffer offset in packet, relative to header.
     #[bw(calc = PosMarker::new(0))]
     _data_offset: PosMarker<u16>,
@@ -175,12 +157,8 @@ impl WriteRequest {
     }
 }
 
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_response(size = 17)]
 pub struct WriteResponse {
-    #[bw(calc = 17)]
-    #[br(assert(_structure_size == 17))]
-    _structure_size: u16,
     #[bw(calc = 0)]
     _reserved: u16,
     pub count: u32,

@@ -4,17 +4,14 @@ use std::io::SeekFrom;
 use binrw::io::TakeSeekExt;
 use binrw::prelude::*;
 use modular_bitfield::prelude::*;
+use smb_msg_derive::{smb_request, smb_response};
 
 use super::FileId;
 use smb_dtyp::binrw_util::prelude::*;
 use smb_fscc::*;
 
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_request(size = 32)]
 pub struct ChangeNotifyRequest {
-    #[bw(calc = 32)]
-    #[br(assert(_structure_size == 32))]
-    _structure_size: u16,
     pub flags: NotifyFlags,
     pub output_buffer_length: u32,
     pub file_id: FileId,
@@ -75,12 +72,8 @@ impl NotifyFilter {
     }
 }
 
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_response(size = 9)]
 pub struct ChangeNotifyResponse {
-    #[bw(calc = 9)]
-    #[br(assert(_structure_size == 9))]
-    _structure_size: u16,
     #[bw(calc = PosMarker::default())]
     _output_buffer_offset: PosMarker<u16>,
     #[bw(calc = PosMarker::default())]

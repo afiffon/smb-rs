@@ -13,13 +13,14 @@ categories.workspace = true
 
 [features]
 default = ["both"]
-client = []
-server = []
+client = ["smb-msg-derive/client"]
+server = ["smb-msg-derive/server"]
 both = ["client", "server"]
 
 [dependencies]
 smb-dtyp = { path = "../smb-dtyp", version = "0.10.4" }
 smb-fscc = { path = "../smb-fscc", version = "0.10.4" }
+smb-msg-derive = { path = "../smb-msg-derive", version = "0.10.4" }
 
 binrw = { workspace = true }
 modular-bitfield = { workspace = true }

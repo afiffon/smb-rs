@@ -1,13 +1,11 @@
 //! Cancel Request
 
 use binrw::prelude::*;
+use smb_msg_derive::*;
 
-#[binrw::binrw]
-#[derive(Debug, Default, PartialEq, Eq)]
+#[smb_request(size = 4)]
+#[derive(Default)]
 pub struct CancelRequest {
-    #[br(assert(_structure_size == 4))]
-    #[bw(calc = 4)]
-    _structure_size: u16,
     #[bw(calc = 0)]
     _reserved: u16,
 }

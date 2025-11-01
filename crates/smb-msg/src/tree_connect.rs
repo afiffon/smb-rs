@@ -23,12 +23,8 @@ pub struct TreeConnectRequestFlags {
 /// Supports both the base and extension variants.
 /// - On read, uses extension iff `flags.extension_present()` - parses just like the server intends.
 /// - On write, uses extension iff `tree_connect_contexts` is non-empty.
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_request(size = 9)]
 pub struct TreeConnectRequest {
-    #[bw(calc = 9)]
-    #[br(assert(_structure_size == 9))]
-    _structure_size: u16,
     pub flags: TreeConnectRequestFlags,
     #[bw(calc = PosMarker::default())]
     _path_offset: PosMarker<u16>,
@@ -201,6 +197,7 @@ mod lsapr_luid_attributes {
 }
 
 use lsapr_luid_attributes::LsaprLuidAttributes;
+use smb_msg_derive::{smb_request, smb_response};
 
 type PrivilegeData = BlobData<LuidAttrData>;
 
@@ -216,12 +213,8 @@ impl TreeConnectRequest {
     }
 }
 
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_response(size = 16)]
 pub struct TreeConnectResponse {
-    #[bw(calc = 16)]
-    #[br(assert(_structure_size == 16))]
-    _structure_size: u16,
     pub share_type: ShareType,
     #[bw(calc = 0)]
     _reserved: u8,
@@ -298,22 +291,16 @@ pub enum ShareType {
     Print = 0x3,
 }
 
-#[binrw::binrw]
-#[derive(Debug, Default)]
+#[smb_request(size = 4)]
+#[derive(Default)]
 pub struct TreeDisconnectRequest {
-    #[bw(calc = 4)]
-    #[br(assert(_structure_size == 4))]
-    _structure_size: u16,
     #[bw(calc = 0)]
     _reserved: u16,
 }
 
-#[binrw::binrw]
-#[derive(Debug)]
+#[smb_response(size = 4)]
+#[derive(Default)]
 pub struct TreeDisconnectResponse {
-    #[bw(calc = 4)]
-    #[br(assert(_structure_size == 4))]
-    _structure_size: u16,
     #[bw(calc = 0)]
     _reserved: u16,
 }

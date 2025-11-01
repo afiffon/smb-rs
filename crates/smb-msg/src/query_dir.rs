@@ -1,6 +1,7 @@
 //! Directory-related messages.
 
 use binrw::io::TakeSeekExt;
+use smb_msg_derive::{smb_request, smb_response};
 use std::io::SeekFrom;
 
 use binrw::prelude::*;
@@ -11,12 +12,8 @@ use smb_fscc::*;
 
 use super::FileId;
 
-#[binrw::binrw]
-#[derive(Debug)]
+#[smb_request(size = 33)]
 pub struct QueryDirectoryRequest {
-    #[bw(calc = 33)]
-    #[br(assert(_structure_size == 33))]
-    _structure_size: u16,
     pub file_information_class: QueryDirectoryInfoClass,
     pub flags: QueryDirectoryFlags,
     // If SMB2_INDEX_SPECIFIED is set in Flags, this value MUST be supplied.
@@ -49,12 +46,8 @@ pub struct QueryDirectoryFlags {
     __: B4,
 }
 
-#[binrw::binrw]
-#[derive(Debug)]
+#[smb_response(size = 9)]
 pub struct QueryDirectoryResponse {
-    #[bw(calc = 9)]
-    #[br(assert(_structure_size == 9))]
-    _structure_size: u16,
     #[bw(calc = PosMarker::default())]
     output_buffer_offset: PosMarker<u16>,
     #[bw(try_calc = output_buffer.len().try_into())]

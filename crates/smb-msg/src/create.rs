@@ -11,6 +11,7 @@ use modular_bitfield::prelude::*;
 use smb_dtyp::SecurityDescriptor;
 use smb_dtyp::{Guid, binrw_util::prelude::*};
 use smb_fscc::*;
+use smb_msg_derive::{smb_request, smb_response};
 
 /// 2.2.14.1: SMB2_FILEID
 #[binrw::binrw]
@@ -60,12 +61,8 @@ impl Debug for FileId {
     }
 }
 
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_request(size = 57)]
 pub struct CreateRequest {
-    #[bw(calc = 57)]
-    #[br(assert(_structure_size == 57))]
-    _structure_size: u16,
     #[bw(calc = 0)] // reserved
     #[br(assert(_security_flags == 0))]
     _security_flags: u8,
@@ -178,12 +175,8 @@ pub struct ShareAccessFlags {
     __: B29,
 }
 
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_response(size = 89)]
 pub struct CreateResponse {
-    #[bw(calc = 89)]
-    #[br(assert(_structure_size == 89))]
-    _structure_size: u16,
     pub oplock_level: OplockLevel,
     pub flags: CreateResponseFlags,
     pub create_action: CreateAction,
@@ -689,12 +682,8 @@ pub struct DH2QResp {
     pub flags: DurableHandleV2Flags,
 }
 
-#[binrw::binrw]
-#[derive(Debug)]
+#[smb_request(size = 24)]
 pub struct CloseRequest {
-    #[bw(calc = 24)]
-    #[br(assert(_structure_size == 24))]
-    _structure_size: u16,
     #[bw(calc = CloseFlags::new().with_postquery_attrib(true))]
     #[br(assert(_flags == CloseFlags::new().with_postquery_attrib(true)))]
     _flags: CloseFlags,
@@ -703,12 +692,8 @@ pub struct CloseRequest {
     pub file_id: FileId,
 }
 
-#[binrw::binrw]
-#[derive(Debug)]
+#[smb_response(size = 60)]
 pub struct CloseResponse {
-    #[bw(calc = 60)]
-    #[br(assert(_structure_size == 60))]
-    _structure_size: u16,
     pub flags: CloseFlags,
     #[bw(calc = 0)]
     _reserved: u32,

@@ -5,17 +5,15 @@ use crate::query_info_data;
 use binrw::{io::TakeSeekExt, prelude::*};
 use modular_bitfield::prelude::*;
 use smb_dtyp::{SID, SecurityDescriptor, binrw_util::prelude::*};
+use smb_msg_derive::smb_request;
+use smb_msg_derive::smb_response;
 use std::io::{Cursor, SeekFrom};
 
 use super::common::*;
 use smb_fscc::*;
 
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_request(size = 41)]
 pub struct QueryInfoRequest {
-    #[bw(calc = 41)]
-    #[br(assert(_structure_size == 41))]
-    _structure_size: u16,
     pub info_type: InfoType,
     #[brw(args(info_type))]
     pub info_class: QueryInfoClass,
@@ -179,12 +177,8 @@ pub struct GetEaInfoList {
     pub values: ChainedItemList<FileGetEaInformation>,
 }
 
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_response(size = 9)]
 pub struct QueryInfoResponse {
-    #[bw(calc = 9)]
-    #[br(assert(_structure_size == 9))]
-    _structure_size: u16,
     #[bw(calc = PosMarker::default())]
     output_buffer_offset: PosMarker<u16>,
     #[bw(calc = PosMarker::default())]
