@@ -36,6 +36,7 @@ where
 {
     #[br(assert(next_entry_offset.value % OFFSET_PAD == 0))]
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     next_entry_offset: PosMarker<NextEntryOffsetType>,
     pub value: T,
 

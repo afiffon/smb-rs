@@ -7,6 +7,10 @@ use binrw::prelude::*;
 
 use smb_dtyp::binrw_util::prelude::*;
 
+/// A (very) minimal SMB1 negotiation message,
+///
+/// See [`SMB1NegotiateMessage::default`] for a default message that
+/// announces support for SMB2/3, as a part of multi-protocol negotiation.
 #[binrw::binrw]
 #[derive(Debug)]
 #[brw(little)]
@@ -44,6 +48,7 @@ pub struct SMB1NegotiateMessage {
 }
 
 impl SMB1NegotiateMessage {
+    /// Check if SMB2 is supported in the dialects list.
     pub fn is_smb2_supported(&self) -> bool {
         self.dialects
             .iter()
@@ -94,6 +99,7 @@ mod tests {
     use super::*;
 
     smb_tests::test_binrw_write! {
-        SMB1NegotiateMessage: SMB1NegotiateMessage::default() => "ff534d4272000000001853c8000000000000000000000000ffff010000000000002200024e54204c4d20302e31320002534d4220322e3030320002534d4220322e3f3f3f00"
+        SMB1NegotiateMessage: SMB1NegotiateMessage::default() =>
+            "ff534d4272000000001853c8000000000000000000000000ffff010000000000002200024e54204c4d20302e31320002534d4220322e3030320002534d4220322e3f3f3f00"
     }
 }

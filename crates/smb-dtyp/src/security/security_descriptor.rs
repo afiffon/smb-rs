@@ -12,9 +12,11 @@ use super::{ACL, SID};
 #[brw(little)]
 pub struct SecurityDescriptor {
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     _sd_begin: PosMarker<()>,
 
     #[bw(calc = 1)]
+    #[br(temp)]
     #[br(assert(_revision == 1))]
     _revision: u8,
     pub sbz1: u8,
@@ -22,12 +24,16 @@ pub struct SecurityDescriptor {
     pub control: SecurityDescriptorControl,
 
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     offset_owner: PosMarker<u32>,
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     offset_group: PosMarker<u32>,
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     offset_sacl: PosMarker<u32>,
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     offset_dacl: PosMarker<u32>,
 
     #[br(if(offset_owner.value != 0))]

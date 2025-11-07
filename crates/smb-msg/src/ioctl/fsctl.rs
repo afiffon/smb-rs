@@ -212,6 +212,7 @@ pub struct SrvSnapshotArray {
     /// Position marker for the size of the snapshots array in bytes.
     /// If the output buffer is too small, this will be the amount of space the array would have occupied.
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     pub snap_shot_array_size: PosMarker<u32>,
     /// An array of timestamps in GMT format (@GMT token), separated by UNICODE null characters
     /// and terminated by two UNICODE null characters. Empty if the output buffer could not
@@ -665,6 +666,7 @@ pub struct SrvEnumerateSnapshotsResponse {
     pub number_of_snap_shots_returned: u32,
     /// The length, in bytes, of the SnapShotMultiSZ field.
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     snap_shot_array_size: PosMarker<u32>,
     /// A list of snapshots, described as strings, that take on the following form: @GMT-YYYY.MM.DD-HH.MM.SS
     #[br(map_stream = |s| s.take_seek(snap_shot_array_size.value as u64))]

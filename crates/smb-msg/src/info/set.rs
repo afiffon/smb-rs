@@ -3,6 +3,7 @@
 use crate::{FileId, query_info_data};
 
 use super::{NullByte, common::*};
+#[cfg(feature = "server")]
 use binrw::io::TakeSeekExt;
 use binrw::prelude::*;
 use smb_dtyp::{SecurityDescriptor, binrw_util::prelude::*};
@@ -12,13 +13,17 @@ use smb_msg_derive::*;
 #[smb_request(size = 33)]
 pub struct SetInfoRequest {
     #[bw(calc = data.info_type())]
+    #[br(temp)]
     pub info_type: InfoType,
     pub info_class: SetInfoClass,
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     buffer_length: PosMarker<u32>,
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     _buffer_offset: PosMarker<u16>,
     #[bw(calc = 0)]
+    #[br(temp)]
     _reserved: u16,
     pub additional_information: AdditionalInfo,
     pub file_id: FileId,

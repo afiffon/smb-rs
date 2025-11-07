@@ -18,6 +18,7 @@ use smb_dtyp::binrw_util::prelude::*;
 #[derive(Debug, PartialEq, Eq)]
 pub struct FileQuotaInformation {
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     sid_length: PosMarker<u32>,
     pub change_time: FileTime,
     pub quota_used: u64,
@@ -48,6 +49,7 @@ impl FileQuotaInformation {
 #[derive(Debug, PartialEq, Eq)]
 pub struct FileGetQuotaInformation {
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     sid_length: PosMarker<u32>,
     #[br(map_stream = |s| s.take_seek(sid_length.value as u64))]
     #[bw(write_with = PosMarker::write_size, args(&sid_length))]

@@ -19,10 +19,12 @@ pub struct QueryInfoRequest {
 
     pub output_buffer_length: u32,
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     _input_buffer_offset: PosMarker<u16>,
     #[bw(calc = 0)]
     _reserved: u16,
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     input_buffer_length: PosMarker<u32>,
     pub additional_info: AdditionalInfo,
     pub flags: QueryInfoFlags,
@@ -115,10 +117,13 @@ pub struct QueryQuotaInfo {
     #[bw(calc = 0)]
     _reserved: u16,
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     sid_list_length: PosMarker<u32>, // type 1: list of FileGetQuotaInformation structs.
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     start_sid_length: PosMarker<u32>, // type 2: SIDs list
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     start_sid_offset: PosMarker<u32>,
 
     /// Option 1: list of FileGetQuotaInformation structs.
@@ -176,8 +181,10 @@ pub struct GetEaInfoList {
 #[smb_response(size = 9)]
 pub struct QueryInfoResponse {
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     output_buffer_offset: PosMarker<u16>,
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     output_buffer_length: PosMarker<u32>,
     #[br(seek_before = SeekFrom::Start(output_buffer_offset.value.into()))]
     #[br(map_stream = |s| s.take_seek(output_buffer_length.value.into()))]

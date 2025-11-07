@@ -4,40 +4,65 @@ use modular_bitfield::prelude::*;
 use smb_dtyp::binrw_util::prelude::*;
 use smb_msg_derive::*;
 
+/// SMB2 SESSION_SETUP Request packet sent by the client to request a new
+/// authenticated session within a new or existing SMB 2 Protocol transport connection.
+///
+/// MS-SMB2 2.2.5
 #[smb_request(size = 25)]
 pub struct SessionSetupRequest {
+    /// Combination of flags for SMB 3.x dialect family
     pub flags: SetupRequestFlags,
+    /// Security mode field specifying whether SMB signing is enabled or required
     pub security_mode: SessionSecurityMode,
+    /// Protocol capabilities for the client
     pub capabilities: NegotiateCapabilities,
     #[bw(calc = 0)]
+    #[br(temp)]
     _channel: u32, // reserved
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     __security_buffer_offset: PosMarker<u16>,
     #[bw(calc = u16::try_from(buffer.len()).unwrap())]
+    #[br(temp)]
     security_buffer_length: u16,
+    /// Previously established session identifier for reconnection after network error
     pub previous_session_id: u64,
     #[br(count = security_buffer_length)]
     #[bw(write_with = PosMarker::write_aoff, args(&__security_buffer_offset))]
+    /// Security buffer containing authentication token
     pub buffer: Vec<u8>,
 }
 
+/// Security mode field specifying whether SMB signing is enabled or required at the client.
+///
+/// MS-SMB2 2.2.5
 #[smb_dtyp::mbitfield]
 pub struct SessionSecurityMode {
+    /// Security signatures are enabled on the client (ignored by server)
     pub signing_enabled: bool,
+    /// Security signatures are required by the client
     pub signing_required: bool,
     #[skip]
     __: B6,
 }
 
+/// Flags field for SESSION_SETUP request (SMB 3.x dialect family only).
+///
+/// MS-SMB2 2.2.5
 #[smb_dtyp::mbitfield]
 pub struct SetupRequestFlags {
+    /// Request is to bind an existing session to a new connection
     pub binding: bool,
     #[skip]
     __: B7,
 }
 
+/// Protocol capabilities for the client.
+///
+/// MS-SMB2 2.2.5
 #[smb_dtyp::mbitfield]
 pub struct NegotiateCapabilities {
+    /// Client supports the Distributed File System (DFS)
     pub dfs: bool,
     #[skip]
     __: B31,
@@ -60,22 +85,34 @@ impl SessionSetupRequest {
     }
 }
 
+/// SMB2 SESSION_SETUP Response packet sent by the server in response to a SESSION_SETUP Request.
+///
+/// MS-SMB2 2.2.6
 #[smb_response(size = 9)]
 pub struct SessionSetupResponse {
+    /// Flags indicating additional information about the session
     pub session_flags: SessionFlags,
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     _security_buffer_offset: PosMarker<u16>,
     #[bw(calc = u16::try_from(buffer.len()).unwrap())]
     security_buffer_length: u16,
     #[br(count = security_buffer_length)]
     #[bw(write_with = PosMarker::write_aoff, args(&_security_buffer_offset))]
+    /// Security buffer containing authentication token
     pub buffer: Vec<u8>,
 }
 
+/// Flags indicating additional information about the session.
+///
+/// MS-SMB2 2.2.6
 #[smb_dtyp::mbitfield]
 pub struct SessionFlags {
+    /// Client has been authenticated as a guest user
     pub is_guest: bool,
+    /// Client has been authenticated as an anonymous user
     pub is_null_session: bool,
+    /// Server requires encryption of messages on this session (SMB 3.x only)
     pub encrypt_data: bool,
     #[skip]
     __: B13,
@@ -87,6 +124,9 @@ impl SessionFlags {
     }
 }
 
+/// SMB2 LOGOFF Request packet sent by the client to request termination of a particular session.
+///
+/// MS-SMB2 2.2.7
 #[smb_request(size = 4)]
 #[derive(Default)]
 pub struct LogoffRequest {
@@ -94,6 +134,9 @@ pub struct LogoffRequest {
     _reserved: u16,
 }
 
+/// SMB2 LOGOFF Response packet sent by the server in response to a LOGOFF Request.
+///
+/// MS-SMB2 2.2.8
 #[smb_response(size = 4)]
 #[derive(Default)]
 pub struct LogoffResponse {

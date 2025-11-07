@@ -1,5 +1,5 @@
 //! File-related messages: Flush, Read, Write.
-
+#[cfg(feature = "client")]
 use std::io::SeekFrom;
 
 use binrw::prelude::*;
@@ -7,6 +7,7 @@ use modular_bitfield::prelude::*;
 use smb_msg_derive::*;
 
 use super::FileId;
+#[cfg(feature = "client")]
 use super::header::Header;
 use smb_dtyp::binrw_util::prelude::*;
 
@@ -63,6 +64,7 @@ pub struct ReadResponse {
     // the STRUCT_SIZE includes the first byte of the buffer, so the offset is validated against a byte before that.
     #[br(assert(_data_offset.value as usize >= Header::STRUCT_SIZE + Self::STRUCT_SIZE - 1))]
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     _data_offset: PosMarker<u8>,
     #[bw(calc = 0)]
     _reserved: u8,
@@ -85,7 +87,7 @@ pub struct ReadResponse {
 }
 
 impl ReadResponse {
-    const STRUCT_SIZE: usize = 17;
+    pub const STRUCT_SIZE: usize = 17;
 }
 
 #[smb_dtyp::mbitfield]
@@ -116,6 +118,7 @@ pub enum CommunicationChannel {
 pub struct WriteRequest {
     /// internal buffer offset in packet, relative to header.
     #[bw(calc = PosMarker::new(0))]
+    #[br(temp)]
     _data_offset: PosMarker<u16>,
 
     /// Length of data to write.
@@ -125,15 +128,19 @@ pub struct WriteRequest {
     pub file_id: FileId,
     // Again, RDMA off, all 0.
     #[bw(calc = CommunicationChannel::None)]
+    #[br(temp)]
     #[br(assert(channel == CommunicationChannel::None))]
     pub channel: CommunicationChannel,
     #[bw(calc = 0)]
+    #[br(temp)]
     #[br(assert(_remaining_bytes == 0))]
     _remaining_bytes: u32,
     #[bw(calc = 0)]
+    #[br(temp)]
     #[br(assert(_write_channel_info_offset == 0))]
     _write_channel_info_offset: u16,
     #[bw(calc = 0)]
+    #[br(temp)]
     #[br(assert(_write_channel_info_length == 0))]
     _write_channel_info_length: u16,
     pub flags: WriteFlags,

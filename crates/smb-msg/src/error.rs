@@ -5,21 +5,38 @@ use binrw::prelude::*;
 use smb_dtyp::binrw_util::prelude::*;
 use smb_msg_derive::*;
 
+/// The SMB2 ERROR Response packet is sent by the server to respond to a request
+/// that has failed or encountered an error.
+///
+/// Reference: MS-SMB2 2.2.2
 #[smb_response(size = 9)]
 pub struct ErrorResponse {
+    /// For SMB dialects other than 3.1.1, this must be set to 0.
+    /// For SMB dialect 3.1.1, if nonzero, the ErrorData field is formatted as
+    /// a variable-length array of SMB2 ERROR Context structures.
     #[bw(try_calc = error_data.len().try_into())]
     _error_context_count: u8,
 
+    /// Reserved field that must not be used and must be set to 0
+    #[br(assert(_reserved == 0))]
     #[bw(calc = 0)]
     _reserved: u8,
 
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     _byte_count: PosMarker<u32>,
 
+    /// Variable-length data field that contains extended error information.
+    /// For SMB 3.1.1 with nonzero ErrorContextCount, formatted as SMB2 ERROR Context structures.
     #[br(count = _error_context_count)]
     pub error_data: Vec<ErrorResponseContext>,
 }
 
+/// For SMB dialect 3.1.1, error data is formatted as an array of SMB2 ERROR Context structures.
+/// Each error context contains an identifier for the error context followed by the error data.
+/// Each context must start at an 8-byte aligned boundary relative to the start of the SMB2 ERROR Response.
+///
+/// Reference: MS-SMB2 2.2.2.1
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 pub struct ErrorResponseContext {
@@ -27,9 +44,12 @@ pub struct ErrorResponseContext {
     // relative to the start of the error context.
     // luckily, it appears after the header, which is, itself, aligned to 8 bytes.
     #[brw(align_before = 8)]
+    /// The length, in bytes, of the ErrorContextData field
     #[bw(try_calc = error_data.len().try_into())]
     _error_data_length: u32,
+    /// An identifier for the error context
     pub error_id: ErrorId,
+    /// Variable-length error data formatted according to the ErrorId
     #[br(count = _error_data_length)]
     pub error_data: Vec<u8>,
 }
@@ -72,11 +92,16 @@ impl ErrorResponseContext {
     }
 }
 
+/// An identifier for the error context in SMB2 ERROR Context structures.
+///
+/// Reference: MS-SMB2 2.2.2.1
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 #[brw(repr(u32))]
 pub enum ErrorId {
+    /// Unless otherwise specified, all errors defined in the MS-SMB2 protocol use this error ID
     Default = 0,
+    /// The ErrorContextData field contains a share redirect message
     ShareRedirect = 0x72645253,
 }
 
