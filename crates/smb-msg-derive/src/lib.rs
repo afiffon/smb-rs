@@ -14,6 +14,7 @@ use syn::{
 enum SmbMsgType {
     Request,
     Response,
+    Both,
 }
 
 impl SmbMsgType {
@@ -31,6 +32,9 @@ impl SmbMsgType {
                 #[cfg_attr(all(feature = "server", feature = "client"), ::binrw::binrw)]
                 #[cfg_attr(all(feature = "server", not(feature = "client")), ::binrw::binwrite)]
                 #[cfg_attr(all(not(feature = "server"), feature = "client"), ::binrw::binread)]
+            },
+            SmbMsgType::Both => quote! {
+                #[::binrw::binrw]
             },
         }
     }
@@ -67,12 +71,16 @@ impl Parse for SmbReqResAttr {
 
 fn make_size_field(size: u16) -> syn::Field {
     // #[bw(calc = #size)]
+    // #[br(temp)]
     // #[br(assert(_structure_size == #size))]
     // _structure_size: u16,
     syn::Field {
         attrs: vec![
             syn::parse_quote! {
                 #[bw(calc = #size)]
+            },
+            syn::parse_quote! {
+                #[br(temp)]
             },
             syn::parse_quote! {
                 #[br(assert(_structure_size == #size))]
@@ -140,6 +148,14 @@ pub fn smb_request(attr: TokenStream, input: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn smb_response(attr: TokenStream, input: TokenStream) -> TokenStream {
     modify_smb_msg(SmbMsgType::Response, input, attr)
+}
+
+/// Proc-macro for constructing SMB request and response messages.
+///
+/// Valid usage is `#[smb_request_response(size = <u16>)]` before a struct definition.
+#[proc_macro_attribute]
+pub fn smb_request_response(attr: TokenStream, input: TokenStream) -> TokenStream {
+    modify_smb_msg(SmbMsgType::Both, input, attr)
 }
 
 /// Proc-macro for adding binrw attributes to SMB request structs.

@@ -8,6 +8,12 @@ use super::negotiate::CompressionAlgorithm;
 use binrw::io::TakeSeekExt;
 use binrw::prelude::*;
 
+/// SMB2 compression transform header variants for compressed messages.
+///
+/// Used by client or server when sending compressed messages in SMB 3.1.1 dialect.
+/// The variant is determined by the compression flags.
+///
+/// MS-SMB2 2.2.42
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 #[brw(little)]
@@ -17,6 +23,7 @@ pub enum CompressedMessage {
 }
 
 impl CompressedMessage {
+    /// Calculates the total size of the compressed message including headers and data.
     pub fn total_size(&self) -> usize {
         match self {
             CompressedMessage::Unchained(m) => {
@@ -31,45 +38,67 @@ impl CompressedMessage {
     }
 }
 
+/// SMB2 compression transform header for unchained compressed messages.
+///
+/// Used when sending unchained compressed messages where the flags field is zero.
+/// Only valid for SMB 3.1.1 dialect.
+///
+/// MS-SMB2 2.2.42.1
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 #[brw(magic(b"\xfcSMB"), little)]
 pub struct CompressedUnchainedMessage {
+    /// Size of the uncompressed data segment
     pub original_size: u32,
-    // The same as the negotiation, but must be set.
+    /// Compression algorithm used (cannot be None for compressed messages)
     #[brw(assert(!matches!(compression_algorithm, CompressionAlgorithm::None)))]
     pub compression_algorithm: CompressionAlgorithm,
+    /// Must be set to SMB2_COMPRESSION_FLAG_NONE (0x0000)
     #[br(assert(flags == 0))]
     #[bw(calc = 0)]
     flags: u16,
+    /// Offset from end of structure to start of compressed data segment
     #[bw(calc = 0)]
     offset: u32,
+    /// Compressed data payload
     #[br(seek_before = SeekFrom::Current(offset as i64))]
     #[br(parse_with = binrw::helpers::until_eof)]
     pub data: Vec<u8>,
 }
 
 impl CompressedUnchainedMessage {
+    /// Size of the protocol identifier magic bytes
     const MAGIC_SIZE: usize = 4;
+    /// Total size of the unchained compression header structure (excluding data)
     pub const STRUCT_SIZE: usize = Self::MAGIC_SIZE
         + std::mem::size_of::<u32>() * 2
         + std::mem::size_of::<CompressionAlgorithm>()
         + std::mem::size_of::<u16>();
 }
 
+/// SMB2 compression transform header for chained compressed messages.
+///
+/// Used when sending compressed and chained SMB2 messages where the flags field
+/// is SMB2_COMPRESSION_FLAG_CHAINED (0x0001). Only valid for SMB 3.1.1 dialect.
+///
+/// MS-SMB2 2.2.42.2
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 #[brw(magic(b"\xfcSMB"), little)]
 pub struct CompressedChainedMessage {
+    /// Size of the uncompressed data segment
     pub original_size: u32,
+    /// Variable length array of compression payload headers
     #[br(parse_with = binrw::helpers::until_eof)]
     pub items: Vec<CompressedChainedItem>,
 }
 
 impl CompressedChainedMessage {
+    /// Total size of the chained compression header structure (excluding payload headers)
     pub const STRUCT_SIZE: usize = std::mem::size_of::<u32>() + 4;
 }
 
+/// Calculates additional bytes to include in length field when OriginalPayloadSize is present.
 fn add_original_size_to_total_length(algo: &CompressionAlgorithm) -> u64 {
     if algo.original_size_required() {
         std::mem::size_of::<u32>() as u64
@@ -78,28 +107,31 @@ fn add_original_size_to_total_length(algo: &CompressionAlgorithm) -> u64 {
     }
 }
 
+/// SMB2 compression chained payload header.
+///
+/// Used when sending chained compressed payloads. This structure is added for each
+/// compressed payload in a chained message. Only valid for SMB 3.1.1 dialect.
+///
+/// MS-SMB2 2.2.42.2.1
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 pub struct CompressedChainedItem {
+    /// Compression algorithm used for this payload
     pub compression_algorithm: CompressionAlgorithm,
+    /// Compression flags (SMB2_COMPRESSION_FLAG_NONE or SMB2_COMPRESSION_FLAG_CHAINED)
     pub flags: u16,
+    /// Length of compressed payload including OriginalPayloadSize if present
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     length: PosMarker<u32>,
-    // Only present if algorithms require it.
+    /// Size of uncompressed payload (present only for LZNT1, LZ77, LZ77+Huffman, or LZ4)
     #[brw(if(compression_algorithm.original_size_required()))]
     #[bw(assert(original_size.is_none() ^ compression_algorithm.original_size_required()))]
     pub original_size: Option<u32>,
-    // The length specified in `length` also includes `original_size` if present!
+    /// Compressed payload data
     #[br(map_stream = |s| s.take_seek(length.value as u64 - (add_original_size_to_total_length(&compression_algorithm))), parse_with = binrw::helpers::until_eof)]
     #[bw(write_with = PosMarker::write_size_plus, args(&length, add_original_size_to_total_length(compression_algorithm)))]
     pub payload_data: Vec<u8>,
-}
-
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
-pub struct CompressedData {
-    #[br(parse_with = binrw::helpers::until_eof)]
-    data: Vec<u8>,
 }
 
 #[cfg(test)]

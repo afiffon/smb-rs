@@ -11,13 +11,17 @@ use super::ACE;
 pub struct ACL {
     pub acl_revision: AclRevision,
     #[bw(calc = 0)]
+    #[br(temp)]
     #[br(assert(sbz1 == 0))]
     sbz1: u8,
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     _acl_size: PosMarker<u16>,
     #[bw(calc = ace.len() as u16)]
+    #[br(temp)]
     ace_count: u16,
     #[bw(calc = 0)]
+    #[br(temp)]
     #[br(assert(sbz2 == 0))]
     sbz2: u16,
 

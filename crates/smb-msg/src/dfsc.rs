@@ -1,3 +1,7 @@
+//! Distributed File System Referral Protocol (MS-DFSC) messages.
+//!
+//! [MS-DFSC](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-dfsc/)
+
 use binrw::{NullWideString, io::TakeSeekExt, prelude::*};
 use modular_bitfield::prelude::*;
 use smb_dtyp::binrw_util::prelude::*;
@@ -74,6 +78,7 @@ impl DfsRequestData {
 }
 
 /// NOTE: This struct currently implements [`BinWrite`] only as a placeholder (calling it will panic).
+/// [`BinRead`] is implemented and can be used to read DFS referral responses.
 #[binrw::binread]
 #[derive(Debug, PartialEq, Eq)]
 pub struct RespGetDfsReferral {
@@ -121,6 +126,7 @@ pub struct ReferralEntry {
     #[bw(calc = value.get_version())]
     pub version: u16,
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     _size: PosMarker<u16>,
 
     #[br(args(version))]
@@ -193,6 +199,7 @@ pub enum DfsServerType {
 #[derive(Debug, PartialEq, Eq)]
 pub struct ReferralEntryValueV2 {
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     _start: PosMarker<()>,
     /// Type of server hosting the target
     pub server_type: DfsServerType,
@@ -205,15 +212,19 @@ pub struct ReferralEntryValueV2 {
     pub time_to_live: u32,
     #[br(assert(dfs_path_offset.value >= ReferralEntry::COMMON_PART_SIZE as u16))]
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     dfs_path_offset: PosMarker<u16>,
     #[br(assert(dfs_alternate_path_offset.value >= ReferralEntry::COMMON_PART_SIZE as u16))]
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     dfs_alternate_path_offset: PosMarker<u16>,
     #[br(assert(network_address_offset.value >= ReferralEntry::COMMON_PART_SIZE as u16))]
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     network_address_offset: PosMarker<u16>,
 
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     _restore_position: PosMarker<()>,
 
     /// The DFS path that corresponds to the DFS root or the DFS link for which target information is returned.
@@ -286,20 +297,25 @@ impl EntryV3Value {
 #[derive(Debug, PartialEq, Eq)]
 pub struct EntryV3V4DfsPaths {
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     _start: PosMarker<()>,
     #[br(assert(dfs_path_offset.value >= EntryV3Value::OFFSET_FROM_ENTRY_START))]
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     dfs_path_offset: PosMarker<u16>,
     #[br(assert(dfs_alternate_path_offset.value >= EntryV3Value::OFFSET_FROM_ENTRY_START))]
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     dfs_alternate_path_offset: PosMarker<u16>,
     #[br(assert(network_address_offset.value >= EntryV3Value::OFFSET_FROM_ENTRY_START))]
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     network_address_offset: PosMarker<u16>,
     #[bw(calc = 0)]
     _service_site_guid: u128,
 
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     _restore_position: PosMarker<()>,
 
     /// The DFS path that corresponds to the DFS root or the DFS link for which target information is returned.
@@ -325,16 +341,20 @@ pub struct EntryV3V4DfsPaths {
 #[derive(Debug, PartialEq, Eq)]
 pub struct EntryV3DCRefs {
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     _start: PosMarker<()>,
     #[br(assert(special_name_offset.value >= EntryV3Value::OFFSET_FROM_ENTRY_START))]
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     special_name_offset: PosMarker<u16>,
     number_of_expanded_names: u16,
     #[br(assert(expanded_name_offset.value >= EntryV3Value::OFFSET_FROM_ENTRY_START))]
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     expanded_name_offset: PosMarker<u16>,
 
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     _restore_position: PosMarker<()>,
 
     #[br(seek_before = _start.seek_from((special_name_offset.value - EntryV3Value::OFFSET_FROM_ENTRY_START).into()))]

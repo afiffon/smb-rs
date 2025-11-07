@@ -28,6 +28,7 @@ macro_rules! rpc_pkts {
 #[brw(little)]
 pub struct [<DceRpcCo $name Pkt>] {
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     _save_pdu_start: PosMarker<()>,
     #[br(assert(rpc_ver == DCE_RPC_VERSION))]
     #[bw(calc = DCE_RPC_VERSION)]
@@ -38,6 +39,7 @@ pub struct [<DceRpcCo $name Pkt>] {
     pfc_flags: DceRpcCoPktFlags,
     pub packed_drep: u32,
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     _frag_length: PosMarker<u16>,
     #[br(assert(auth_length == 0))]
     #[bw(calc = 0)]

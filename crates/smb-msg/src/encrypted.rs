@@ -10,18 +10,24 @@ const SIGNATURE_SIZE: usize = 16;
 /// or padded with zeroes to match the required size. When transmitted, the full 16 bytes are used.
 pub type EncryptionNonce = [u8; 16];
 
+/// This header is used by the client or server when sending encrypted messages
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 #[brw(little, magic(b"\xfdSMB"))]
 pub struct EncryptedHeader {
+    /// The 16-byte signature of the message generated using negotiated encryption algorithm
     pub signature: u128,
+    /// An implementation-specific value assigned for every encrypted message. This MUST NOT be reused for all encrypted messages within a session.
     pub nonce: EncryptionNonce,
+    /// The size, in bytes, of the SMB2 message.
     pub original_message_size: u32,
     #[bw(calc = 0)]
     _reserved: u16,
-    #[bw(calc = 1)] // MUST be set to 1.
+    #[bw(calc = 1)]
+    // MUST be set to 1, in SMB3.1.1 because encrypted, in others because encryption algorithm is AES128-CCM (0x1)
     #[br(assert(_flags == 1))]
     _flags: u16,
+    /// Uniquely identifies the established session for the command.
     pub session_id: u64,
 }
 
@@ -49,6 +55,7 @@ impl EncryptedHeader {
     }
 }
 
+/// An entirely encrypted SMB2 message, that includes both the encrypted header and the encrypted message.
 #[binrw::binrw]
 #[derive(Debug)]
 pub struct EncryptedMessage {

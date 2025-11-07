@@ -1,5 +1,6 @@
 //! Directory-related messages.
 
+#[cfg(feature = "client")]
 use binrw::io::TakeSeekExt;
 use smb_msg_derive::*;
 use std::io::SeekFrom;
@@ -39,6 +40,7 @@ pub struct QueryDirectoryRequest {
     /// Offset from the beginning of the SMB2 header to the search pattern.
     /// Set to zero if no search pattern is provided.
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     pub file_name_offset: PosMarker<u16>,
     /// Length in bytes of the search pattern.
     /// Set to zero if no search pattern is provided.
@@ -86,6 +88,7 @@ pub struct QueryDirectoryFlags {
 pub struct QueryDirectoryResponse {
     /// Offset in bytes from the beginning of the SMB2 header to the directory enumeration data.
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     output_buffer_offset: PosMarker<u16>,
     /// Length in bytes of the directory enumeration being returned.
     #[bw(try_calc = output_buffer.len().try_into())]

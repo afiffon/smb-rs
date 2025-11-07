@@ -15,3 +15,16 @@ This crate is meant to be used with anyone who wants to implement SMB-related fu
 See the documentation of the crate for more information.
 
 Configure the features to your use case: use `server`, `client`, or `both`.
+
+## Documentation Note
+
+Documentation for most of the structures in this crate is based on the official Microsoft documentation,
+and is vibe-documented accordingly (you can see the instructions in `.github/copilot-instructions.md` :)).
+
+My tip for those who want an advanced, in-depth understanding of the SMB2 protocol - open up the official MS-SMB2 documentation from Microsoft,
+and read it alongside the code and documentation here.
+Most structs are named properly and are easily mappable to the official documentation, so you can get a deep understanding of the protocol that way.
+
+## Code Generation
+
+See the `smb-dtyp-derive` crate for more information about the code generation proc-macros used in this crate.

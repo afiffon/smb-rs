@@ -16,6 +16,7 @@ pub struct NegotiateRequest {
     pub client_guid: Guid,
 
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     negotiate_context_offset: PosMarker<u32>,
     #[bw(try_calc(u16::try_from(negotiate_context_list.as_ref().map(|v| v.len()).unwrap_or(0))))]
     negotiate_context_count: u16,
@@ -70,10 +71,12 @@ pub struct NegotiateResponse {
     pub system_time: FileTime,
     pub server_start_time: FileTime,
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     _security_buffer_offset: PosMarker<u16>,
     #[bw(try_calc(u16::try_from(buffer.len())))]
     security_buffer_length: u16,
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     negotiate_context_offset: PosMarker<u32>,
     #[br(count = security_buffer_length)]
     #[bw(write_with = PosMarker::write_aoff, args(&_security_buffer_offset))]
@@ -221,6 +224,7 @@ pub struct NegotiateContext {
     #[brw(align_before = 8)]
     pub context_type: NegotiateContextType,
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     data_length: PosMarker<u16>,
     #[bw(calc = 0)]
     _reserved: u32,

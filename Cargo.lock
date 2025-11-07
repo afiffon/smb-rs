@@ -2537,7 +2537,7 @@ dependencies = [
 
 [[package]]
 name = "smb-dtyp-derive"
-version = "0.10.3"
+version = "0.10.4"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2568,7 +2568,6 @@ dependencies = [
  "pastey",
  "smb-dtyp",
  "smb-fscc",
- "smb-msg",
  "smb-msg-derive",
  "smb-tests",
  "thiserror 2.0.17",
@@ -2577,7 +2576,7 @@ dependencies = [
 
 [[package]]
 name = "smb-msg-derive"
-version = "0.10.3"
+version = "0.10.4"
 dependencies = [
  "proc-macro2",
  "quote",

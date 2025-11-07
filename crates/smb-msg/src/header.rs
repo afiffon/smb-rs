@@ -171,6 +171,7 @@ make_status! {
 #[brw(magic(b"\xfeSMB"), little)]
 pub struct Header {
     #[bw(calc = Self::STRUCT_SIZE as u16)]
+    #[br(temp)]
     #[br(assert(_structure_size == Self::STRUCT_SIZE as u16))]
     _structure_size: u16,
     pub credit_charge: u16,

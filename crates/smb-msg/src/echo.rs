@@ -5,6 +5,8 @@ use smb_msg_derive::*;
 macro_rules! make_echo {
     ($mtype:ident) => {
         pastey::paste! {
+        #[doc = concat!("SMB2 Echo ", stringify!($mtype:camel), ".")]
+        #[doc = concat!("Reference: MS-SMB2 2.2.28; 2.2.29")]
         #[[<smb_ $mtype>](size = 4)]
         #[derive(Default)]
         pub struct [<Echo $mtype:camel>] {

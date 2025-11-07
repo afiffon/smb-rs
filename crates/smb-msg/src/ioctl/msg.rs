@@ -2,11 +2,14 @@ use super::{
     common::{IoctlBuffer, IoctlRequestContent},
     fsctl::*,
 };
+#[cfg(feature = "server")]
 use binrw::io::TakeSeekExt;
 use binrw::prelude::*;
 use modular_bitfield::prelude::*;
 use smb_dtyp::binrw_util::prelude::*;
 use smb_msg_derive::*;
+
+#[cfg(feature = "client")]
 use std::io::SeekFrom;
 
 use crate::{
@@ -21,8 +24,10 @@ pub struct IoctlRequest {
     pub ctl_code: u32,
     pub file_id: FileId,
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     _input_offset: PosMarker<u32>,
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     _input_count: PosMarker<u32>,
     pub max_input_response: u32,
     #[bw(calc = 0)]
@@ -136,6 +141,7 @@ pub struct IoctlResponse {
     pub ctl_code: u32,
     pub file_id: FileId,
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     input_offset: PosMarker<u32>,
     #[bw(assert(in_buffer.is_empty()))] // there is an exception for pass-through operations.
     #[bw(try_calc = in_buffer.len().try_into())]
@@ -145,6 +151,7 @@ pub struct IoctlResponse {
     // is either (0) or (input_offset + input_count)
     #[br(assert(output_offset.value == 0 || output_offset.value == input_offset.value + input_count))]
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     output_offset: PosMarker<u32>,
     #[bw(try_calc = out_buffer.len().try_into())]
     output_count: u32,

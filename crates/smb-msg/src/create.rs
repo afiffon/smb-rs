@@ -1,7 +1,10 @@
 //! Create & Close (files) requests and responses.
 
 use std::fmt::{Debug, Display};
-use std::io::{Cursor, SeekFrom};
+use std::io::Cursor;
+
+#[cfg(feature = "client")]
+use std::io::SeekFrom;
 
 use super::header::Status;
 use super::*;
@@ -61,37 +64,56 @@ impl Debug for FileId {
     }
 }
 
+/// The SMB2 CREATE Request packet is sent by a client to request either creation of
+/// or access to a file. In case of a named pipe or printer, the server creates a new file.
+///
+/// Reference: MS-SMB2 2.2.13
 #[smb_request(size = 57)]
 pub struct CreateRequest {
+    /// Reserved field that must not be used and must be set to 0
     #[bw(calc = 0)] // reserved
     #[br(assert(_security_flags == 0))]
     _security_flags: u8,
+    /// The requested oplock level for this file open
     pub requested_oplock_level: OplockLevel,
+    /// The impersonation level requested by the application issuing the create request
     pub impersonation_level: ImpersonationLevel,
+    /// Reserved field that must not be used and should be set to 0
     #[bw(calc = 0)]
     #[br(assert(_smb_create_flags == 0))]
     _smb_create_flags: u64,
+    /// Reserved field that must not be used
     #[bw(calc = 0)]
     _reserved: u64,
+    /// The level of access required for the file or pipe
     pub desired_access: FileAccessMask,
+    /// File attributes to be applied when creating or opening the file
     pub file_attributes: FileAttributes,
+    /// Specifies the sharing mode for the open
     pub share_access: ShareAccessFlags,
+    /// Defines the action the server must take if the file already exists
     pub create_disposition: CreateDisposition,
+    /// Options to be applied when creating or opening the file
     pub create_options: CreateOptions,
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     _name_offset: PosMarker<u16>,
     #[bw(try_calc = name.size().try_into())]
     name_length: u16, // bytes
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     _create_contexts_offset: PosMarker<u32>,
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     _create_contexts_length: PosMarker<u32>,
 
+    /// The Unicode file name to be created or opened
     #[brw(align_before = 8)]
     #[bw(write_with = PosMarker::write_aoff, args(&_name_offset))]
     #[br(args { size: SizedStringSize::bytes16(name_length) })]
     pub name: SizedWideString,
 
+    /// The list of create contexts sent in this request.
     /// Use the [`CreateContextRequestData`]`::first_...` function family to get the first context of a specific type.
     #[brw(align_before = 8)]
     #[br(map_stream = |s| s.take_seek(_create_contexts_length.value.into()))]
@@ -99,98 +121,163 @@ pub struct CreateRequest {
     pub contexts: ChainedItemList<RequestCreateContext, 8>,
 }
 
+/// The impersonation level requested by the application issuing the create request.
+///
+/// Reference: MS-SMB2 2.2.13
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 #[brw(repr(u32))]
 pub enum ImpersonationLevel {
+    /// The application-requested impersonation level is Anonymous
     Anonymous = 0x0,
+    /// The application-requested impersonation level is Identification
     Identification = 0x1,
+    /// The application-requested impersonation level is Impersonation
     Impersonation = 0x2,
+    /// The application-requested impersonation level is Delegate
     Delegate = 0x3,
 }
 
+/// Defines the action the server must take if the file already exists.
+/// For opening named pipes, this field can be set to any value and is ignored by the server.
+///
+/// Reference: MS-SMB2 2.2.13
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq, Copy, Clone, Default)]
 #[brw(repr(u32))]
 pub enum CreateDisposition {
+    /// If the file already exists, supersede it. Otherwise, create the file
     Superseded = 0x0,
+    /// If the file already exists, return success; otherwise, fail the operation
     #[default]
     Open = 0x1,
+    /// If the file already exists, fail the operation; otherwise, create the file
     Create = 0x2,
+    /// Open the file if it already exists; otherwise, create the file
     OpenIf = 0x3,
+    /// Overwrite the file if it already exists; otherwise, fail the operation
     Overwrite = 0x4,
+    /// Overwrite the file if it already exists; otherwise, create the file
     OverwriteIf = 0x5,
 }
 
+/// Options to be applied when creating or opening the file.
+///
+/// Reference: MS-SMB2 2.2.13
 #[smb_dtyp::mbitfield]
 pub struct CreateOptions {
+    /// The file being created or opened is a directory file
     pub directory_file: bool,
+    /// The server performs file write-through
     pub write_through: bool,
+    /// Application intends to read or write at sequential offsets
     pub sequential_only: bool,
+    /// File buffering is not performed on this open
     pub no_intermediate_buffering: bool,
 
+    /// Should be set to 0 and is ignored by the server
     pub synchronous_io_alert: bool,
+    /// Should be set to 0 and is ignored by the server
     pub synchronous_io_nonalert: bool,
+    /// If the name matches an existing directory file, the server must fail the request
     pub non_directory_file: bool,
     #[skip]
     __: bool,
 
+    /// Should be set to 0 and is ignored by the server
     pub complete_if_oplocked: bool,
+    /// The caller does not understand how to handle extended attributes
     pub no_ea_knowledge: bool,
+    /// Should be set to 0 and is ignored by the server
     pub open_remote_instance: bool,
+    /// Application intends to read or write at random offsets
     pub random_access: bool,
 
+    /// The file must be automatically deleted when the last open request is closed
     pub delete_on_close: bool,
+    /// Should be set to 0 and the server must fail the request if set
     pub open_by_file_id: bool,
+    /// The file is being opened for backup intent
     pub open_for_backup_intent: bool,
+    /// The file cannot be compressed
     pub no_compression: bool,
 
+    /// Should be set to 0 and is ignored by the server
     pub open_requiring_oplock: bool,
+    /// Should be set to 0 and is ignored by the server
     pub disallow_exclusive: bool,
     #[skip]
     __: B2,
 
+    /// Should be set to 0 and the server must fail the request if set
     pub reserve_opfilter: bool,
+    /// If the file is a reparse point, open the reparse point itself
     pub open_reparse_point: bool,
+    /// In HSM environment, the file should not be recalled from tertiary storage
     pub open_no_recall: bool,
+    /// Open file to query for free space
     pub open_for_free_space_query: bool,
 
     #[skip]
     __: B8,
 }
 
-// share_access 4 byte flags:
+/// Specifies the sharing mode for the open.
+///
+/// Reference: MS-SMB2 2.2.13
 #[smb_dtyp::mbitfield]
 pub struct ShareAccessFlags {
+    /// Other opens are allowed to read this file while this open is present
     pub read: bool,
+    /// Other opens are allowed to write this file while this open is present
     pub write: bool,
+    /// Other opens are allowed to delete or rename this file while this open is present
     pub delete: bool,
     #[skip]
     __: B29,
 }
 
+/// The SMB2 CREATE Response packet is sent by the server to notify the client of
+/// the status of its SMB2 CREATE Request.
+///
+/// Reference: MS-SMB2 2.2.14
 #[smb_response(size = 89)]
 pub struct CreateResponse {
+    /// The oplock level that is granted to the client for this open
     pub oplock_level: OplockLevel,
+    /// Response flags indicating properties of the opened file
     pub flags: CreateResponseFlags,
+    /// The action taken in establishing the open
     pub create_action: CreateAction,
+    /// The time when the file was created
     pub creation_time: FileTime,
+    /// The time the file was last accessed
     pub last_access_time: FileTime,
+    /// The time when data was last written to the file
     pub last_write_time: FileTime,
+    /// The time when the file was last modified
     pub change_time: FileTime,
+    /// The size, in bytes, of the data that is allocated to the file
     pub allocation_size: u64,
+    /// The size, in bytes, of the file
     pub endof_file: u64,
+    /// The attributes of the file
     pub file_attributes: FileAttributes,
+    /// Reserved field that must not be used
     #[bw(calc = 0)]
     _reserved2: u32,
+    /// The identifier of the open to a file or pipe that was established
     pub file_id: FileId,
     // assert it's 8-aligned
     #[br(assert(create_contexts_offset.value & 0x7 == 0))]
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     create_contexts_offset: PosMarker<u32>, // from smb header start
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     create_contexts_length: PosMarker<u32>, // bytes
 
+    /// The list of create contexts returned in this response.
     /// Use the [`CreateContextResponseData`]`::first_...` function family to get the first context of a specific type.
     #[br(seek_before = SeekFrom::Start(create_contexts_offset.value as u64))]
     #[br(map_stream = |s| s.take_seek(create_contexts_length.value.into()))]
@@ -198,27 +285,42 @@ pub struct CreateResponse {
     pub create_contexts: ChainedItemList<ResponseCreateContext, 8>,
 }
 
+/// Response flags indicating properties of the opened file.
+/// Only valid for SMB 3.x dialect family.
+///
+/// Reference: MS-SMB2 2.2.14
 #[smb_dtyp::mbitfield]
 pub struct CreateResponseFlags {
+    /// When set, indicates the last portion of the file path is a reparse point
     pub reparsepoint: bool,
     #[skip]
     __: B7,
 }
 
-// CreateAction
+/// The action taken in establishing the open.
+///
+/// Reference: MS-SMB2 2.2.14
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 #[brw(repr(u32))]
 pub enum CreateAction {
+    /// An existing file was deleted and a new file was created in its place
     Superseded = 0x0,
+    /// An existing file was opened
     Opened = 0x1,
+    /// A new file was created
     Created = 0x2,
+    /// An existing file was overwritten
     Overwritten = 0x3,
 }
 
 /// The common definition that wrap around all create contexts, for both request and response.
+/// Create contexts are used to pass additional information to the server or receive additional
+/// information from the server in the CREATE request and response.
 ///
 /// This is meant to be used within a [`ChainedItemList<T>`][smb_fscc::ChainedItemList<T>]!
+///
+/// Reference: MS-SMB2 2.2.13, 2.2.14
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 #[bw(import(is_last: bool))]
@@ -228,22 +330,27 @@ where
     for<'a> T: BinRead<Args<'a> = (&'a Vec<u8>,)> + BinWrite<Args<'static> = ()>,
 {
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     _name_offset: PosMarker<u16>, // relative to ChainedItem (any access must consider +CHAINED_ITEM_PREFIX_SIZE from start of item)
     #[bw(calc = u16::try_from(name.len()).unwrap())]
     name_length: u16,
     #[bw(calc = 0)]
     _reserved: u16,
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     _data_offset: PosMarker<u16>,
     #[bw(calc = PosMarker::default())]
+    #[br(temp)]
     _data_length: PosMarker<u32>,
 
+    /// The name of the create context
     #[brw(align_before = 8)]
     #[br(count = name_length)]
     #[br(seek_before = _name_offset.seek_from(_name_offset.value as u64 - CHAINED_ITEM_PREFIX_SIZE as u64))]
     #[bw(write_with = PosMarker::write_roff_plus, args(&_name_offset, CHAINED_ITEM_PREFIX_SIZE as u64))]
     pub name: Vec<u8>,
 
+    /// The data payload of the create context
     #[bw(align_before = 8)]
     #[br(assert(_data_offset.value % 8 == 0))]
     #[bw(write_with = PosMarker::write_roff_size_b_plus, args(&_data_offset, &_data_length, &_name_offset, CHAINED_ITEM_PREFIX_SIZE as u64))]
