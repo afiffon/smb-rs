@@ -196,7 +196,6 @@ pub struct CreateResponse {
     pub endof_file: u64,
     pub file_attributes: FileAttributes,
     #[bw(calc = 0)]
-    #[br(assert(_reserved2 == 0))]
     _reserved2: u32,
     pub file_id: FileId,
     // assert it's 8-aligned
@@ -658,8 +657,31 @@ pub struct SvhdxOpenDeviceContextV2 {
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 pub struct QueryMaximalAccessResponse {
+    // MS-SMB2, 2.2.14.2.5: "MaximalAccess field is valid only if QueryStatus is STATUS_SUCCESS.
+    // he status code MUST be one of those defined in [MS-ERREF] section 2.3"
+    /// Use [`is_success()`][QueryMaximalAccessResponse::is_success] to check if the query was successful.
     pub query_status: Status,
+
+    /// The maximal access mask for the opened file.
+    ///
+    /// Use [`access_mask()`][QueryMaximalAccessResponse::access_mask] to get the access mask if the query was successful.
     pub maximal_access: FileAccessMask,
+}
+
+impl QueryMaximalAccessResponse {
+    /// Returns true if the query was successful.
+    pub fn is_success(&self) -> bool {
+        self.query_status == Status::Success
+    }
+
+    /// Returns the maximal access mask if the query was successful.
+    pub fn maximal_access(&self) -> Option<FileAccessMask> {
+        if self.is_success() {
+            Some(self.maximal_access)
+        } else {
+            None
+        }
+    }
 }
 
 #[binrw::binrw]
@@ -791,6 +813,39 @@ mod tests {
             0000000000001000000000000000490100000c000000090000000c0000009800000058000000200000001000040000001800080000
             004d7841630000000000000000ff011f000000000010000400000018002000000051466964000000002ae7010000000400d9cf17b0
             0000000000000000000000000000000000000000"
+    }
+
+    use smb_dtyp::make_guid;
+
+    test_response_read! {
+        server2016: Create {
+            oplock_level: OplockLevel::None,
+            flags: CreateResponseFlags::new(),
+            create_action: CreateAction::Opened,
+            creation_time: FileTime::ZERO,
+            last_access_time: FileTime::ZERO,
+            last_write_time: FileTime::ZERO,
+            change_time: FileTime::ZERO,
+            allocation_size: 4096,
+            endof_file: 0,
+            file_attributes: FileAttributes::new().with_normal(true),
+            file_id: make_guid!("00000001-0001-0000-0100-000001000000").into(),
+            create_contexts: vec![
+                QueryMaximalAccessResponse {
+                    query_status: Status::NotMapped, // Server 2016 IPC$ bug
+                    maximal_access: FileAccessMask::default(),
+                }
+                .into(),
+                QueryOnDiskIdResp {
+                    file_id: 0xffff870415d75290,
+                    volume_id: 0xffffe682cb589c90,
+                }
+                .into(),
+            ].into(),
+        } => "59000000010000000000000000000000000000000000000000000000000000000000000000000000001000000000000000000000
+        000000008000000076007300010000000100000001000000010000009800000058000000200000001000040000001800080000004d7841
+        6300000000730000c0000000000000000010000400000018002000000051466964000000009052d7150487ffff909c58cb82e6ffff0000
+        0000000000000000000000000000"
     }
 
     /*

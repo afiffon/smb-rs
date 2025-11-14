@@ -154,15 +154,15 @@ impl Resource {
         let is_dir = response.file_attributes.directory();
 
         // Get maximal access
-        let access = match CreateContextResponseData::first_mxac(&response.create_contexts.into()) {
-            Some(response) => response.maximal_access,
-            _ => {
-                log::debug!(
-                    "No maximal access context found for file '{name}', using default (full access)."
-                );
-                FileAccessMask::from_bytes(u32::MAX.to_be_bytes())
-            }
-        };
+        let access = CreateContextResponseData::first_mxac(&response.create_contexts.into())
+            .and_then(|r| r.maximal_access())
+            .unwrap_or_else(|| {
+                    log::debug!(
+                        "No maximal access context found for file '{name}', using default (full access)."
+                    );
+                    FileAccessMask::from_bytes(u32::MAX.to_be_bytes())
+                }
+            );
 
         // Common information is held in the handle object.
         let handle = ResourceHandle {
