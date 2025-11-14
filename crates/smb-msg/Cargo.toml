@@ -28,6 +28,5 @@ pastey = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
-smb-msg = { path = ".", version = "0.10.2", features = ["both"] }
 smb-tests = { path = "../smb-tests", version = "0.10.2" }
 const_format = { workspace = true }
