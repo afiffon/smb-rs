@@ -23,7 +23,6 @@ pub struct QueryInfoRequest {
     pub output_buffer_length: u32,
     #[bw(calc = PosMarker::default())]
     _input_buffer_offset: PosMarker<u16>,
-    #[br(assert(_reserved == 0))]
     #[bw(calc = 0)]
     _reserved: u16,
     #[bw(calc = PosMarker::default())]

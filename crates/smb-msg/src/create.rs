@@ -75,7 +75,6 @@ pub struct CreateRequest {
     #[br(assert(_smb_create_flags == 0))]
     _smb_create_flags: u64,
     #[bw(calc = 0)]
-    #[br(assert(_reserved == 0))]
     _reserved: u64,
     pub desired_access: FileAccessMask,
     pub file_attributes: FileAttributes,
@@ -249,7 +248,6 @@ where
     #[bw(calc = u16::try_from(name.len()).unwrap())]
     name_length: u16,
     #[bw(calc = 0)]
-    #[br(assert(_reserved == 0))]
     _reserved: u16,
     #[bw(calc = PosMarker::default())]
     _data_offset: PosMarker<u16>,
@@ -526,7 +524,6 @@ pub struct RequestLeaseV2 {
     pub parent_lease_key: u128,
     pub epoch: u16,
     #[bw(calc = 0)]
-    #[br(assert(reserved == 0))]
     reserved: u16,
 }
 
@@ -550,7 +547,6 @@ pub struct DurableHandleRequestV2 {
     pub timeout: u32,
     pub flags: DurableHandleV2Flags,
     #[bw(calc = 0)]
-    #[br(assert(_reserved == 0))]
     _reserved: u64,
     pub create_guid: Guid,
 }
@@ -582,7 +578,6 @@ pub struct AppInstanceId {
     #[br(assert(structure_size == 20))]
     structure_size: u16,
     #[bw(calc = 0)]
-    #[br(assert(_reserved == 0))]
     _reserved: u16,
     pub app_instance_id: Guid,
 }
@@ -594,10 +589,8 @@ pub struct AppInstanceVersion {
     #[br(assert(structure_size == 24))]
     structure_size: u16,
     #[bw(calc = 0)]
-    #[br(assert(_reserved == 0))]
     _reserved: u16,
     #[bw(calc = 0)]
-    #[br(assert(_reserved2 == 0))]
     _reserved2: u32,
     pub app_instance_version_high: u64,
     pub app_instance_version_low: u64,
@@ -617,10 +610,8 @@ pub struct SvhdxOpenDeviceContextV1 {
     pub version: u32,
     pub has_initiator_id: Boolean,
     #[bw(calc = 0)]
-    #[br(assert(reserved1 == 0))]
     reserved1: u8,
     #[bw(calc = 0)]
-    #[br(assert(reserved2 == 0))]
     reserved2: u16,
     pub initiator_id: Guid,
     pub flags: u32,
@@ -636,10 +627,8 @@ pub struct SvhdxOpenDeviceContextV2 {
     pub version: u32,
     pub has_initiator_id: Boolean,
     #[bw(calc = 0)]
-    #[br(assert(reserved1 == 0))]
     reserved1: u8,
     #[bw(calc = 0)]
-    #[br(assert(reserved2 == 0))]
     reserved2: u16,
     pub initiator_id: Guid,
     pub flags: u32,
@@ -690,7 +679,6 @@ pub struct QueryOnDiskIdResp {
     pub file_id: u64,
     pub volume_id: u64,
     #[bw(calc = 0)]
-    #[br(assert(_reserved == 0))]
     _reserved: u128,
 }
 
@@ -711,7 +699,6 @@ pub struct CloseRequest {
     #[br(assert(_flags == CloseFlags::new().with_postquery_attrib(true)))]
     _flags: CloseFlags,
     #[bw(calc = 0)]
-    #[br(assert(_reserved == 0))]
     _reserved: u32,
     pub file_id: FileId,
 }
@@ -724,7 +711,6 @@ pub struct CloseResponse {
     _structure_size: u16,
     pub flags: CloseFlags,
     #[bw(calc = 0)]
-    #[br(assert(_reserved == 0))]
     _reserved: u32,
     pub creation_time: FileTime,
     pub last_access_time: FileTime,

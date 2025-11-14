@@ -20,7 +20,6 @@ pub struct IoctlRequest {
     #[br(assert(struct_size == 57))]
     struct_size: u16,
     #[bw(calc = 0)]
-    #[br(assert(_reserved == 0))]
     _reserved: u16,
     pub ctl_code: u32,
     pub file_id: FileId,
@@ -38,7 +37,6 @@ pub struct IoctlRequest {
     pub max_output_response: u32,
     pub flags: IoctlRequestFlags,
     #[bw(calc = 0)]
-    #[br(assert(reserved2 == 0))]
     reserved2: u32,
 
     #[bw(write_with = PosMarker::write_aoff_size, args(&_input_offset, &_input_count))]
@@ -136,7 +134,6 @@ pub struct IoctlResponse {
     #[br(assert(struct_size == 49))]
     struct_size: u16,
     #[bw(calc = 0)]
-    #[br(assert(_reserved == 0))]
     _reserved: u16,
     pub ctl_code: u32,
     pub file_id: FileId,
@@ -158,7 +155,6 @@ pub struct IoctlResponse {
     #[br(assert(flags == 0))]
     flags: u32,
     #[bw(calc = 0)]
-    #[br(assert(reserved2 == 0))]
     reserved2: u32,
 
     #[br(seek_before = SeekFrom::Start(input_offset.value.into()))]

@@ -238,10 +238,8 @@ struct PatternV1Compression;
 pub struct PatternV1Payload {
     pattern: u8,
     #[bw(calc = 0)]
-    #[br(assert(reserved1 == 0))]
     reserved1: u8,
     #[bw(calc = 0)]
-    #[br(assert(reserved2 == 0))]
     reserved2: u16,
     repetitions: u32,
 }

@@ -365,7 +365,6 @@ pub struct FileFsVolumeInformation {
     ///  Set to TRUE if the file system supports object-oriented file system objects; set to FALSE otherwise.
     pub supports_objects: Boolean,
     #[bw(calc = 0)]
-    #[br(assert(reserved == 0))]
     reserved: u8,
     /// The content of this field can be a null-terminated string or can be a string padded with the space character to be VolumeLabelLength bytes long.
     #[br(args { size: SizedStringSize::bytes(volume_label_length) })]

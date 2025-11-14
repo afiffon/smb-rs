@@ -32,7 +32,6 @@ pub struct FileBasicInformation {
     /// The file attributes.
     pub file_attributes: FileAttributes,
     #[bw(calc = 0)]
-    #[br(assert(_reserved == 0))]
     _reserved: u32,
 }
 

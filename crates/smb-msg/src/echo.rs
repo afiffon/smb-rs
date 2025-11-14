@@ -7,7 +7,6 @@ pub struct EchoMesasge {
     #[br(assert(_structure_size == 4))]
     #[bw(calc = 4)]
     _structure_size: u16,
-    #[br(assert(_reserved == 0))]
     #[bw(calc = 0)]
     _reserved: u16,
 }

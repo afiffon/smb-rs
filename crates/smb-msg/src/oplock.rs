@@ -11,10 +11,8 @@ pub struct OplockBreakMsg {
     _structure_size: u16,
     oplock_level: u8,
     #[bw(calc = 0)]
-    #[br(assert(_reserved == 0))]
     _reserved: u8,
     #[bw(calc = 0)]
-    #[br(assert(reserved2 == 0))]
     reserved2: u32,
     file_id: FileId,
 }
@@ -74,7 +72,6 @@ pub struct LeaseBreakAckResponse {
     #[br(assert(_structure_size == 36))]
     _structure_size: u16,
     #[bw(calc = 0)]
-    #[br(assert(_reserved == 0))]
     _reserved: u16,
     #[bw(calc = 0)] // reserved
     #[br(assert(flags == 0))]

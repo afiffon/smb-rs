@@ -310,7 +310,6 @@ pub struct ClaimSecurityAttributeRelativeV1 {
     _name: PosMarker<u32>, // TODO: Figure out what this is.
     pub value_type: ClaimSecurityAttributeType,
     #[bw(calc = 0)]
-    #[br(assert(reserved == 0))]
     reserved: u16,
     pub flags: FciClaimSecurityAttributes,
     value_count: u32,

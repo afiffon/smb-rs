@@ -18,7 +18,6 @@ pub struct EncryptedHeader {
     pub nonce: EncryptionNonce,
     pub original_message_size: u32,
     #[bw(calc = 0)]
-    #[br(assert(_reserved == 0))]
     _reserved: u16,
     #[bw(calc = 1)] // MUST be set to 1.
     #[br(assert(_flags == 1))]
