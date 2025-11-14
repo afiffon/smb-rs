@@ -8,7 +8,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-smb = { path = "../smb", default-features = false, features = ["std-fs-impls"] }
+smb = { path = "../smb" }
 
 maybe-async = { workspace = true }
 tokio = { workspace = true, optional = true, features = ["rt-multi-thread"] }
