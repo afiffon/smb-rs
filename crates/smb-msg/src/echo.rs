@@ -2,23 +2,19 @@
 use binrw::prelude::*;
 use smb_msg_derive::*;
 
-macro_rules! make_echo {
-    ($mtype:ident) => {
-        pastey::paste! {
-        #[doc = concat!("SMB2 Echo ", stringify!($mtype:camel), ".")]
-        #[doc = concat!("Reference: MS-SMB2 2.2.28; 2.2.29")]
-        #[[<smb_ $mtype>](size = 4)]
-        #[derive(Default)]
-        pub struct [<Echo $mtype:camel>] {
-            #[bw(calc = 0)]
-            _reserved: u16,
-        }
-                }
-    };
+/// SMB2 Echo request/response.
+///
+/// MS-SMB2 2.2.28; 2.2.29
+#[smb_request_response(size = 4)]
+#[derive(Default)]
+pub struct EchoMessage {
+    #[bw(calc = 0)]
+    #[br(temp)]
+    _reserved: u16,
 }
 
-make_echo!(request);
-make_echo!(response);
+pub use EchoMessage as EchoRequest;
+pub use EchoMessage as EchoResponse;
 
 #[cfg(test)]
 mod tests {
@@ -27,10 +23,6 @@ mod tests {
     use super::*;
 
     test_binrw! {
-        struct EchoRequest {} => "04000000"
-    }
-
-    test_binrw! {
-        struct EchoResponse {} => "04000000"
+        struct EchoMessage {} => "04000000"
     }
 }

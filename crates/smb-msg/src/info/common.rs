@@ -40,7 +40,6 @@ pub struct AdditionalInfo {
 ///   - implementations of `From<ContentType>` for each content type.
 ///   - Methods to unwrap the content type, named `as_<variant_name_in_snake_case>()`.
 /// 2. A generic struct names `Raw<name>` to hold the raw data, with a method to convert it to the actual data.
-#[macro_export]
 macro_rules! query_info_data {
     ($name:ident $($info_type:ident: $content:ty, )+) => {
         pastey::paste! {
@@ -156,3 +155,5 @@ macro_rules! query_info_data {
         }
     };
 }
+
+pub(crate) use query_info_data;
