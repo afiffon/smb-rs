@@ -19,4 +19,4 @@ pastey = { workspace = true }
 rand = { workspace = true }
 
 [dev-dependencies]
-smb-tests = { path = "../smb-tests", version = "0.10.3" }
+smb-tests = { path = "../smb-tests", version = "0.10.4" }

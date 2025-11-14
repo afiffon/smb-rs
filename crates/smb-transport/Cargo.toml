@@ -12,8 +12,8 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-smb-dtyp = { path = "../smb-dtyp", version = "0.10.3" }
-smb-msg = { path = "../smb-msg", version = "0.10.3", optional = true }
+smb-dtyp = { path = "../smb-dtyp", version = "0.10.4" }
+smb-msg = { path = "../smb-msg", version = "0.10.4", optional = true }
 
 log = { workspace = true }
 tokio = { workspace = true, features = [

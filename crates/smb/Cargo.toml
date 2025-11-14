@@ -12,11 +12,11 @@ categories.workspace = true
 readme.workspace = true
 
 [dependencies]
-smb-msg = { path = "../smb-msg", version = "0.10.3", default-features = false, features = ["client"]}
-smb-dtyp = { path = "../smb-dtyp", version = "0.10.3" }
-smb-rpc = { path = "../smb-rpc", version = "0.10.3" }
-smb-fscc = { path = "../smb-fscc", version = "0.10.3" }
-smb-transport = { path = "../smb-transport", version = "0.10.3", default-features = false }
+smb-msg = { path = "../smb-msg", version = "0.10.4", default-features = false, features = ["client"]}
+smb-dtyp = { path = "../smb-dtyp", version = "0.10.4" }
+smb-rpc = { path = "../smb-rpc", version = "0.10.4" }
+smb-fscc = { path = "../smb-fscc", version = "0.10.4" }
+smb-transport = { path = "../smb-transport", version = "0.10.4", default-features = false }
 
 # Encoding/Decoding
 binrw = { workspace = true }

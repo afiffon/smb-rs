@@ -12,7 +12,7 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-smb-dtyp = { path = "../smb-dtyp", version = "0.10.3" }
+smb-dtyp = { path = "../smb-dtyp", version = "0.10.4" }
 
 binrw = { workspace = true }
 modular-bitfield = { workspace = true }
@@ -21,5 +21,5 @@ pastey = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
-smb-tests = { path = "../smb-tests", version = "0.10.3" }
+smb-tests = { path = "../smb-tests", version = "0.10.4" }
 const_format = { workspace = true }
