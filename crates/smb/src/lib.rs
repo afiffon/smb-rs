@@ -1,4 +1,5 @@
 #![doc = include_str!("../docs/index.md")]
+#![forbid(unsafe_code)]
 
 #[cfg(not(any(
     feature = "async",

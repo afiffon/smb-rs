@@ -19,7 +19,7 @@ Contain a code snippet that uses the crate, and reproduces the bug.
 
 - If this is a runtime failure, please provide:
   - SMB server software and version (e.g. Samba 4.15.0 or Windows Server 2022)
-  - Authentication method, if relevant
+  - Authentication method, if relevant (ntlm/kerberos - domain environment?)
   - Custom configuration or used features, if relevant
 
 - Crate version: [e.g. 0.8.1]

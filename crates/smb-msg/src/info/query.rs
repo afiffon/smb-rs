@@ -1,7 +1,6 @@
 //! Get/Set Info Request/Response
 
 use crate::FileId;
-use crate::query_info_data;
 use binrw::{io::TakeSeekExt, prelude::*};
 use modular_bitfield::prelude::*;
 use smb_dtyp::{SID, SecurityDescriptor, binrw_util::prelude::*};
@@ -11,12 +10,18 @@ use std::io::{Cursor, SeekFrom};
 use super::common::*;
 use smb_fscc::*;
 
+/// Request to query information on a file, named pipe, or underlying volume.
+///
+/// MS-SMB2 2.2.37
 #[smb_request(size = 41)]
 pub struct QueryInfoRequest {
+    /// The type of information queried (file, filesystem, security, or quota).
     pub info_type: InfoType,
+    /// For file/filesystem queries, specifies the information class to retrieve.
     #[brw(args(info_type))]
     pub info_class: QueryInfoClass,
 
+    /// Maximum number of bytes the server can send in the response.
     pub output_buffer_length: u32,
     #[bw(calc = PosMarker::default())]
     #[br(temp)]
@@ -26,15 +31,23 @@ pub struct QueryInfoRequest {
     #[bw(calc = PosMarker::default())]
     #[br(temp)]
     input_buffer_length: PosMarker<u32>,
+    /// Provides additional information for security or EA queries.
+    /// For security queries, contains flags indicating which security attributes to return.
+    /// For EA queries without an EA list, contains index to start enumeration.
     pub additional_info: AdditionalInfo,
+    /// Flags for EA enumeration control (restart scan, return single entry, index specified).
     pub flags: QueryInfoFlags,
+    /// Identifier of the file or named pipe on which to perform the query.
     pub file_id: FileId,
+    /// Input data for quota or EA queries. Empty for other information types.
     #[br(map_stream = |s| s.take_seek(input_buffer_length.value as u64))]
     #[br(args(&info_class, info_type))]
     #[bw(write_with = PosMarker::write_aoff_size_a, args(&_input_buffer_offset, &input_buffer_length, (info_class, *info_type)))]
     pub data: GetInfoRequestData,
 }
 
+/// Helper enum to specify the information class for query info requests,
+/// when it is applicable.
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 #[br(import(info_type: InfoType))]
@@ -80,16 +93,22 @@ impl AdditionalInfo {
 
 #[smb_dtyp::mbitfield]
 pub struct QueryInfoFlags {
+    /// Restart the scan for EAs from the beginning.
     pub restart_scan: bool,
+    /// Return a single EA entry in the response buffer.
     pub return_single_entry: bool,
+    /// The caller has specified an EA index.
     pub index_specified: bool,
     #[skip]
     __: B29,
 }
 
-/// This struct describes the payload to be added in the [QueryInfoRequest]
-/// when asking for information about Quota or Extended Attributes.
-/// In other cases, it is empty.
+/// Input data for query information requests that require additional parameters.
+///
+/// This payload is used for quota and extended attribute queries.
+/// Other information types have no input data.
+///
+/// MS-SMB2 2.2.37
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 #[brw(import(file_info_class: &QueryInfoClass, query_info_type: InfoType))]
@@ -109,10 +128,15 @@ pub enum GetInfoRequestData {
     None(()),
 }
 
+/// Specifies the quota information to query.
+///
+/// MS-SMB2 2.2.37.1
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 pub struct QueryQuotaInfo {
+    /// If true, server returns a single quota entry. Otherwise, returns maximum entries that fit.
     pub return_single: Boolean,
+    /// If true, quota information is read from the beginning. Otherwise, continues from previous enumeration.
     pub restart_scan: Boolean,
     #[bw(calc = 0)]
     _reserved: u16,
@@ -126,14 +150,14 @@ pub struct QueryQuotaInfo {
     #[br(temp)]
     start_sid_offset: PosMarker<u32>,
 
-    /// Option 1: list of FileGetQuotaInformation structs.
+    /// Option 1: List of FileGetQuotaInformation structs to query specific quota entries.
     #[br(if(sid_list_length.value > 0))]
     #[br(map_stream = |s| s.take_seek(sid_list_length.value as u64))]
     #[bw(if(get_quota_info_content.as_ref().is_some_and(|v| !v.is_empty())))]
     #[bw(write_with = PosMarker::write_size, args(&sid_list_length))]
     pub get_quota_info_content: Option<ChainedItemList<FileGetQuotaInformation>>,
 
-    /// Option 2: SID (usually not used).
+    /// Option 2: Single SID to query quota for a specific user.
     #[br(if(start_sid_length.value > 0))]
     #[bw(if(sid.is_some()))]
     #[br(seek_before = SeekFrom::Current(start_sid_offset.value as i64))]
@@ -146,7 +170,7 @@ pub struct QueryQuotaInfo {
 impl QueryQuotaInfo {
     /// Builds a new [`QueryQuotaInfo`] with a list of [`FileGetQuotaInformation`] structs.
     ///
-    /// Option #1 under 2.2.37.1
+    /// MS-SMB2 2.2.37.1 Option 1
     pub fn new(
         return_single: bool,
         restart_scan: bool,
@@ -162,7 +186,7 @@ impl QueryQuotaInfo {
 
     /// Builds a new [`QueryQuotaInfo`] with a single SID.
     ///
-    /// Option #2 under 2.2.37.1
+    /// MS-SMB2 2.2.37.1 Option 2
     pub fn new_sid(return_single: bool, restart_scan: bool, sid: SID) -> Self {
         Self {
             return_single: return_single.into(),
@@ -178,6 +202,9 @@ pub struct GetEaInfoList {
     pub values: ChainedItemList<FileGetEaInformation>,
 }
 
+/// Response to a query information request, containing the requested data.
+///
+/// MS-SMB2 2.2.38
 #[smb_response(size = 9)]
 pub struct QueryInfoResponse {
     #[bw(calc = PosMarker::default())]
@@ -186,6 +213,7 @@ pub struct QueryInfoResponse {
     #[bw(calc = PosMarker::default())]
     #[br(temp)]
     output_buffer_length: PosMarker<u32>,
+    /// The information being returned. Format depends on the info type and additional information from the request.
     #[br(seek_before = SeekFrom::Start(output_buffer_offset.value.into()))]
     #[br(map_stream = |s| s.take_seek(output_buffer_length.value.into()))]
     #[bw(write_with = PosMarker::write_aoff_size, args(&output_buffer_offset, &output_buffer_length))]
@@ -202,8 +230,10 @@ impl QueryInfoResponse {
     }
 }
 
-/// A helpers struct that contains the raw data of a query info response or a set info request,
-/// and can be parsed using the [`QueryInfoResponseData::parse`] method, to a specific info type.
+/// A helper structure containing raw response data that can be parsed into specific information types.
+///
+/// Call [`QueryInfoResponseData::parse`] to convert to the appropriate data format
+/// based on the info type from the request.
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 pub struct QueryInfoResponseData {
