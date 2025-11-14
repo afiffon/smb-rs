@@ -14,7 +14,6 @@ pub struct NegotiateRequest {
     dialect_count: u16,
     pub security_mode: NegotiateSecurityMode,
     #[bw(calc = 0)]
-    #[br(assert(_reserved == 0))]
     _reserved: u16,
     pub capabilities: GlobalCapabilities,
     pub client_guid: Guid,
@@ -24,7 +23,6 @@ pub struct NegotiateRequest {
     #[bw(try_calc(u16::try_from(negotiate_context_list.as_ref().map(|v| v.len()).unwrap_or(0))))]
     negotiate_context_count: u16,
     #[bw(calc = 0)]
-    #[br(assert(reserved2 == 0))]
     reserved2: u16,
     #[br(count = dialect_count)]
     pub dialects: Vec<Dialect>,
@@ -238,7 +236,6 @@ pub struct NegotiateContext {
     #[bw(calc = PosMarker::default())]
     data_length: PosMarker<u16>,
     #[bw(calc = 0)]
-    #[br(assert(_reserved == 0))]
     _reserved: u32,
     #[br(args(&context_type))]
     #[br(map_stream = |s| s.take_seek(data_length.value as u64))]
@@ -422,10 +419,8 @@ pub struct RdmaTransformCapabilities {
     transform_count: u16,
 
     #[bw(calc = 0)]
-    #[br(assert(reserved1 == 0))]
     reserved1: u16,
     #[bw(calc = 0)]
-    #[br(assert(reserved2 == 0))]
     reserved2: u32,
 
     #[br(count = transform_count)]

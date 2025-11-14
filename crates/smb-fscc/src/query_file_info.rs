@@ -372,7 +372,6 @@ pub struct FileStandardInformation {
     /// Set to TRUE if the file is a directory.
     pub directory: Boolean,
     #[bw(calc = 0)]
-    #[br(assert(reserved == 0))]
     reserved: u16,
 }
 

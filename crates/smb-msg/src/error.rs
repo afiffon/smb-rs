@@ -14,7 +14,6 @@ pub struct ErrorResponse {
     #[bw(try_calc = error_data.len().try_into())]
     _error_context_count: u8,
 
-    #[br(assert(_reserved == 0))]
     #[bw(calc = 0)]
     _reserved: u8,
 

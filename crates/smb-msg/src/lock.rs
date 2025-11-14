@@ -32,7 +32,6 @@ pub struct LockElement {
     pub length: u64,
     pub flags: LockFlag,
     #[bw(calc = 0)]
-    #[br(assert(_reserved == 0))]
     _reserved: u32,
 }
 
@@ -56,7 +55,6 @@ pub struct LockResponse {
     #[br(assert(_structure_size == 4))]
     pub _structure_size: u16,
     #[bw(calc = 0)]
-    #[br(assert(_reserved == 0))]
     pub _reserved: u16,
 }
 

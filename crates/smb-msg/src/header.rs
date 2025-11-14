@@ -147,6 +147,7 @@ make_status! {
     ObjectPathNotFound = 0xC000003A: "Object Path Not Found",
     NoEasOnFile = 0xC0000044: "No EAs on File",
     LogonFailure = 0xC000006D: "Logon Failure",
+    NotMapped = 0xC0000073: "Not Mapped",
     BadImpersonationLevel = 0xC00000A5: "Bad Impersonation Level",
     IoTimeout = 0xC00000B5: "I/O Timeout",
     FileIsADirectory = 0xC00000BA: "File is a Directory",

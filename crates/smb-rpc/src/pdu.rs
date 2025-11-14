@@ -222,7 +222,6 @@ pub struct DcRpcCoPktBindContextElement {
     #[bw(calc = transfer_syntaxes.len() as u8)]
     pub num_transfer_syntaxes: u8,
     #[bw(calc = 0)]
-    #[br(assert(_reserved == 0))]
     _reserved: u8,
     pub abstract_syntax: DceRpcSyntaxId,
     #[br(count = num_transfer_syntaxes)]

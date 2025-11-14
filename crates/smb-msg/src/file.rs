@@ -16,10 +16,8 @@ pub struct FlushRequest {
     #[br(assert(_structure_size == 24))]
     _structure_size: u16,
     #[bw(calc = 0)]
-    #[br(assert(_reserved1 == 0))]
     _reserved1: u16,
     #[bw(calc = 0)]
-    #[br(assert(_reserved2 == 0))]
     _reserved2: u32,
     pub file_id: FileId,
 }
@@ -31,7 +29,6 @@ pub struct FlushResponse {
     #[br(assert(_structure_size == 4))]
     _structure_size: u16,
     #[bw(calc = 0)]
-    #[br(assert(_reserved == 0))]
     _reserved: u16,
 }
 
@@ -82,7 +79,6 @@ pub struct ReadResponse {
     #[bw(calc = PosMarker::default())]
     _data_offset: PosMarker<u8>,
     #[bw(calc = 0)]
-    #[br(assert(_reserved == 0))]
     _reserved: u8,
     #[bw(try_calc = buffer.len().try_into())]
     #[br(assert(_data_length > 0))] // sanity
@@ -93,7 +89,6 @@ pub struct ReadResponse {
 
     // No RDMA support -- always zero, for both reserved and flags case:
     #[bw(calc = 0)]
-    #[br(assert(_reserved2 == 0))]
     _reserved2: u32,
 
     #[br(seek_before = SeekFrom::Start(_data_offset.value as u64))]
@@ -187,7 +182,6 @@ pub struct WriteResponse {
     #[br(assert(_structure_size == 17))]
     _structure_size: u16,
     #[bw(calc = 0)]
-    #[br(assert(_reserved == 0))]
     _reserved: u16,
     pub count: u32,
     #[bw(calc = 0)] // reserved

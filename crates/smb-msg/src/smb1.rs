@@ -23,7 +23,6 @@ pub struct SMB1NegotiateMessage {
     _pid_high: u16,
     security_features: [u8; 8],
     #[bw(calc = 0)]
-    #[br(assert(_reserved == 0))]
     _reserved: u16,
     #[bw(calc = 0xffff)]
     _tid: u16,
