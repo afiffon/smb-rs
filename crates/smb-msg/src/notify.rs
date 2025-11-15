@@ -30,6 +30,7 @@ pub struct ChangeNotifyRequest {
     pub completion_filter: NotifyFilter,
     /// Reserved field that must not be used and must be set to 0.
     #[bw(calc = 0)]
+    #[br(temp)]
     _reserved: u32,
 }
 
@@ -135,6 +136,7 @@ pub struct ServerToClientNotification {
     structure_size: u16,
     /// Reserved field that must not be used and must be set to 0.
     #[bw(calc = 0)]
+    #[br(temp)]
     _reserved: u16,
     /// Valid SMB_NOTIFICATION_ID enumeration notification type value.
     #[bw(calc = notification.get_type())]
@@ -186,6 +188,7 @@ impl Notification {
 pub struct NotifySessionClosed {
     /// Reserved field that must not be used and must be set to 0.
     #[bw(calc = 0)]
+    #[br(temp)]
     _reserved: u32,
 }
 

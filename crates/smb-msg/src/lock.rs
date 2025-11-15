@@ -51,6 +51,7 @@ pub struct LockElement {
     pub flags: LockFlag,
     /// Reserved field that must not be used and must be set to 0.
     #[bw(calc = 0)]
+    #[br(temp)]
     _reserved: u32,
 }
 
@@ -84,7 +85,8 @@ pub struct LockFlag {
 pub struct LockResponse {
     /// Reserved field that must not be used and must be set to 0.
     #[bw(calc = 0)]
-    pub _reserved: u16,
+    #[br(temp)]
+    _reserved: u16,
 }
 
 #[cfg(test)]

@@ -131,6 +131,7 @@ impl SessionFlags {
 #[derive(Default)]
 pub struct LogoffRequest {
     #[bw(calc = 0)]
+    #[br(temp)]
     _reserved: u16,
 }
 
@@ -141,6 +142,7 @@ pub struct LogoffRequest {
 #[derive(Default)]
 pub struct LogoffResponse {
     #[bw(calc = 0)]
+    #[br(temp)]
     _reserved: u16,
 }
 

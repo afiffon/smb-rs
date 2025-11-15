@@ -205,8 +205,10 @@ pub struct DcRpcCoPktBind {
     num_context_items: u8,
 
     #[bw(calc = 0)]
+    #[br(temp)]
     _reserved: u8,
     #[bw(calc = 0)]
+    #[br(temp)]
     _reserved2: u16,
 
     #[br(count = num_context_items)]
@@ -220,6 +222,7 @@ pub struct DcRpcCoPktBindContextElement {
     #[bw(calc = transfer_syntaxes.len() as u8)]
     pub num_transfer_syntaxes: u8,
     #[bw(calc = 0)]
+    #[br(temp)]
     _reserved: u8,
     pub abstract_syntax: DceRpcSyntaxId,
     #[br(count = num_transfer_syntaxes)]
@@ -262,8 +265,10 @@ pub struct DcRpcCoPktBindAck {
     #[bw(calc = results.len() as u8)]
     num_results: u8,
     #[bw(calc = 0)]
+    #[br(temp)]
     _reserved: u8,
     #[bw(calc = 0)]
+    #[br(temp)]
     _reserved2: u16,
 
     #[br(count = num_results)]
@@ -347,6 +352,7 @@ pub struct DcRpcCoPktResponse {
     pub context_id: u16,
     pub cancel_count: u8,
     #[bw(calc = 0)]
+    #[br(temp)]
     _reserved: u8,
 
     #[br(parse_with = binrw::helpers::until_eof)]

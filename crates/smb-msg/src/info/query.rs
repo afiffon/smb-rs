@@ -27,6 +27,7 @@ pub struct QueryInfoRequest {
     #[br(temp)]
     _input_buffer_offset: PosMarker<u16>,
     #[bw(calc = 0)]
+    #[br(temp)]
     _reserved: u16,
     #[bw(calc = PosMarker::default())]
     #[br(temp)]
@@ -139,6 +140,7 @@ pub struct QueryQuotaInfo {
     /// If true, quota information is read from the beginning. Otherwise, continues from previous enumeration.
     pub restart_scan: Boolean,
     #[bw(calc = 0)]
+    #[br(temp)]
     _reserved: u16,
     #[bw(calc = PosMarker::default())]
     #[br(temp)]

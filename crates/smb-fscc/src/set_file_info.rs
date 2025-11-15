@@ -74,10 +74,13 @@ pub struct FileRenameInformation {
     /// Set to TRUE to indicate that if a file with the given name already exists, it should be replaced with the given file. Set to FALSE if the rename operation should fail if a file with the given name already exists.
     pub replace_if_exists: Boolean,
     #[bw(calc = 0)]
+    #[br(temp)]
     _reserved: u8,
     #[bw(calc = 0)]
+    #[br(temp)]
     _reserved2: u16,
     #[bw(calc = 0)]
+    #[br(temp)]
     _reserved3: u32,
     /// A file handle for the root directory. For network operations, this value must be zero.
     pub root_directory: u64,
@@ -114,10 +117,13 @@ pub struct FileLinkInformation {
     /// Set to TRUE to indicate that if a file with the given name already exists, it should be replaced with the given file. Set to FALSE if the link operation should fail if a file with the given name already exists.
     pub replace_if_exists: Boolean,
     #[bw(calc = 0)]
+    #[br(temp)]
     _reserved: u8,
     #[bw(calc = 0)]
+    #[br(temp)]
     _reserved2: u16,
     #[bw(calc = 0)]
+    #[br(temp)]
     _reserved3: u32,
     /// A file handle for the root directory. For network operations, this value must be zero.
     #[bw(calc = 0)]
