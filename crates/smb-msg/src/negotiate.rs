@@ -8,11 +8,10 @@ use smb_msg_derive::*;
 #[smb_request(size = 36)]
 pub struct NegotiateRequest {
     #[bw(try_calc(u16::try_from(dialects.len())))]
+    #[br(temp)]
     dialect_count: u16,
     pub security_mode: NegotiateSecurityMode,
-    #[bw(calc = 0)]
-    #[br(temp)]
-    _reserved: u16,
+    reserved: u16,
     pub capabilities: GlobalCapabilities,
     pub client_guid: Guid,
 
@@ -20,10 +19,9 @@ pub struct NegotiateRequest {
     #[br(temp)]
     negotiate_context_offset: PosMarker<u32>,
     #[bw(try_calc(u16::try_from(negotiate_context_list.as_ref().map(|v| v.len()).unwrap_or(0))))]
-    negotiate_context_count: u16,
-    #[bw(calc = 0)]
     #[br(temp)]
-    reserved2: u16,
+    negotiate_context_count: u16,
+    reserved: u16,
     #[br(count = dialect_count)]
     pub dialects: Vec<Dialect>,
     // Only on SMB 3.1.1 supporting clients we have negotiation contexts.
@@ -64,6 +62,7 @@ pub struct NegotiateResponse {
     pub dialect_revision: NegotiateDialect,
     #[bw(try_calc(u16::try_from(negotiate_context_list.as_ref().map(|v| v.len()).unwrap_or(0))))]
     #[br(assert(if dialect_revision == NegotiateDialect::Smb0311 { negotiate_context_count > 0 } else { negotiate_context_count == 0 }))]
+    #[br(temp)]
     negotiate_context_count: u16,
     pub server_guid: Guid,
     pub capabilities: GlobalCapabilities,
@@ -76,6 +75,7 @@ pub struct NegotiateResponse {
     #[br(temp)]
     _security_buffer_offset: PosMarker<u16>,
     #[bw(try_calc(u16::try_from(buffer.len())))]
+    #[br(temp)]
     security_buffer_length: u16,
     #[bw(calc = PosMarker::default())]
     #[br(temp)]
@@ -219,8 +219,7 @@ impl TryFrom<NegotiateDialect> for Dialect {
 ///     signing_algorithms: vec![SigningAlgorithmId::AesGmac]
 /// }.into();
 /// ```
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_message_binrw]
 pub struct NegotiateContext {
     // The entire context is 8-byte aligned.
     #[brw(align_before = 8)]
@@ -228,9 +227,7 @@ pub struct NegotiateContext {
     #[bw(calc = PosMarker::default())]
     #[br(temp)]
     data_length: PosMarker<u16>,
-    #[bw(calc = 0)]
-    #[br(temp)]
-    _reserved: u32,
+    reserved: u32,
     #[br(args(&context_type))]
     #[br(map_stream = |s| s.take_seek(data_length.value as u64))]
     #[bw(write_with = PosMarker::write_size, args(&data_length))]
@@ -298,8 +295,7 @@ pub enum HashAlgorithm {
     Sha512 = 0x01,
 }
 
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_message_binrw]
 pub struct PreauthIntegrityCapabilities {
     #[bw(try_calc(u16::try_from(hash_algorithms.len())))]
     hash_algorithm_count: u16,
@@ -311,8 +307,7 @@ pub struct PreauthIntegrityCapabilities {
     pub salt: Vec<u8>,
 }
 
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_message_binrw]
 pub struct EncryptionCapabilities {
     #[bw(try_calc(u16::try_from(ciphers.len())))]
     cipher_count: u16,
@@ -329,8 +324,8 @@ pub enum EncryptionCipher {
     Aes256Gcm = 0x0004,
 }
 
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[smb_message_binrw]
+#[derive(Clone)]
 pub struct CompressionCapabilities {
     #[bw(try_calc(u16::try_from(compression_algorithms.len())))]
     compression_algorithm_count: u16,
@@ -400,25 +395,19 @@ pub struct TransportCapabilities {
     __: B31,
 }
 
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_message_binrw]
 pub struct RdmaTransformCapabilities {
     #[bw(try_calc(u16::try_from(transforms.len())))]
     transform_count: u16,
 
-    #[bw(calc = 0)]
-    #[br(temp)]
-    reserved1: u16,
-    #[bw(calc = 0)]
-    #[br(temp)]
-    reserved2: u32,
+    reserved: u16,
+    reserved: u32,
 
     #[br(count = transform_count)]
     pub transforms: Vec<RdmaTransformId>,
 }
 
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[smb_message_binrw]
 #[brw(repr(u16))]
 pub enum RdmaTransformId {
     None = 0x0000,
@@ -426,8 +415,7 @@ pub enum RdmaTransformId {
     Signing = 0x0002,
 }
 
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_message_binrw]
 pub struct SigningCapabilities {
     #[bw(try_calc(u16::try_from(signing_algorithms.len())))]
     signing_algorithm_count: u16,

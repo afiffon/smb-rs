@@ -40,8 +40,7 @@ pub struct LockSequence {
 /// that are locked or unlocked in SMB2 LOCK requests.
 ///
 /// Reference: MS-SMB2 2.2.26.1
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_request_binrw]
 pub struct LockElement {
     /// Starting offset in bytes from where the range being locked or unlocked starts.
     pub offset: u64,
@@ -49,10 +48,7 @@ pub struct LockElement {
     pub length: u64,
     /// Flags describing how the range is being locked or unlocked and how to process the operation.
     pub flags: LockFlag,
-    /// Reserved field that must not be used and must be set to 0.
-    #[bw(calc = 0)]
-    #[br(temp)]
-    _reserved: u32,
+    reserved: u32,
 }
 
 /// Lock flags describing how the range is being locked or unlocked.
@@ -77,16 +73,12 @@ pub struct LockFlag {
 }
 
 /// SMB2 LOCK Response packet sent by the server in response to an SMB2 LOCK Request.
-/// The response structure is minimal, containing only reserved fields.
 ///
 /// Reference: MS-SMB2 2.2.27
 #[smb_response(size = 4)]
 #[derive(Default)]
 pub struct LockResponse {
-    /// Reserved field that must not be used and must be set to 0.
-    #[bw(calc = 0)]
-    #[br(temp)]
-    _reserved: u16,
+    reserved: u16,
 }
 
 #[cfg(test)]

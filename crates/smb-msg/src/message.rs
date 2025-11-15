@@ -4,7 +4,6 @@ use smb_msg_derive::*;
 macro_rules! make_message {
     ($name:ident, $binrw_type:ident, $plain_type:ty) => {
         #[$binrw_type]
-        #[derive(Debug)]
         #[brw(little)]
         pub enum $name {
             Plain($plain_type),

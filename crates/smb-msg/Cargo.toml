@@ -16,8 +16,8 @@ all-features = true
 
 [features]
 default = ["both"]
-client = ["smb-msg-derive/client"]
-server = ["smb-msg-derive/server"]
+client = []
+server = []
 both = ["client", "server"]
 
 [dependencies]

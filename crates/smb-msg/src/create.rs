@@ -70,22 +70,15 @@ impl Debug for FileId {
 /// Reference: MS-SMB2 2.2.13
 #[smb_request(size = 57)]
 pub struct CreateRequest {
-    /// Reserved field that must not be used and must be set to 0
-    #[bw(calc = 0)] // reserved
-    #[br(assert(_security_flags == 0))]
-    _security_flags: u8,
+    /// SecurityFlags
+    reserved: u8,
     /// The requested oplock level for this file open
     pub requested_oplock_level: OplockLevel,
     /// The impersonation level requested by the application issuing the create request
     pub impersonation_level: ImpersonationLevel,
-    /// Reserved field that must not be used and should be set to 0
-    #[bw(calc = 0)]
-    #[br(assert(_smb_create_flags == 0))]
-    _smb_create_flags: u64,
-    /// Reserved field that must not be used
-    #[bw(calc = 0)]
-    #[br(temp)]
-    _reserved: u64,
+    /// SmbCreateFlags
+    reserved: u64,
+    reserved: u64,
     /// The level of access required for the file or pipe
     pub desired_access: FileAccessMask,
     /// File attributes to be applied when creating or opening the file
@@ -100,6 +93,7 @@ pub struct CreateRequest {
     #[br(temp)]
     _name_offset: PosMarker<u16>,
     #[bw(try_calc = name.size().try_into())]
+    #[br(temp)]
     name_length: u16, // bytes
     #[bw(calc = PosMarker::default())]
     #[br(temp)]
@@ -119,14 +113,14 @@ pub struct CreateRequest {
     #[brw(align_before = 8)]
     #[br(map_stream = |s| s.take_seek(_create_contexts_length.value.into()))]
     #[bw(write_with = PosMarker::write_roff_size, args(&_create_contexts_offset, &_create_contexts_length))]
-    pub contexts: ChainedItemList<RequestCreateContext, 8>,
+    pub contexts: ChainedItemList<CreateContextRequest, 8>,
 }
 
 /// The impersonation level requested by the application issuing the create request.
 ///
 /// Reference: MS-SMB2 2.2.13
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+#[smb_request_binrw]
+#[derive(Copy, Clone)]
 #[brw(repr(u32))]
 pub enum ImpersonationLevel {
     /// The application-requested impersonation level is Anonymous
@@ -143,8 +137,8 @@ pub enum ImpersonationLevel {
 /// For opening named pipes, this field can be set to any value and is ignored by the server.
 ///
 /// Reference: MS-SMB2 2.2.13
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq, Copy, Clone, Default)]
+#[smb_request_binrw]
+#[derive(Copy, Clone, Default)]
 #[brw(repr(u32))]
 pub enum CreateDisposition {
     /// If the file already exists, supersede it. Otherwise, create the file
@@ -264,10 +258,7 @@ pub struct CreateResponse {
     pub endof_file: u64,
     /// The attributes of the file
     pub file_attributes: FileAttributes,
-    /// Reserved field that must not be used
-    #[bw(calc = 0)]
-    #[br(temp)]
-    _reserved2: u32,
+    reserved: u32,
     /// The identifier of the open to a file or pipe that was established
     pub file_id: FileId,
     // assert it's 8-aligned
@@ -284,7 +275,7 @@ pub struct CreateResponse {
     #[br(seek_before = SeekFrom::Start(create_contexts_offset.value as u64))]
     #[br(map_stream = |s| s.take_seek(create_contexts_length.value.into()))]
     #[bw(write_with = PosMarker::write_roff_size, args(&create_contexts_offset, &create_contexts_length))]
-    pub create_contexts: ChainedItemList<ResponseCreateContext, 8>,
+    pub create_contexts: ChainedItemList<CreateContextResponse, 8>,
 }
 
 /// Response flags indicating properties of the opened file.
@@ -302,8 +293,7 @@ pub struct CreateResponseFlags {
 /// The action taken in establishing the open.
 ///
 /// Reference: MS-SMB2 2.2.14
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_response_binrw]
 #[brw(repr(u32))]
 pub enum CreateAction {
     /// An existing file was deleted and a new file was created in its place
@@ -316,6 +306,17 @@ pub enum CreateAction {
     Overwritten = 0x3,
 }
 
+macro_rules! create_context_half {
+    (
+        $struct_name:ident {
+            $(
+                $context_type:ident : $req_type:ty,
+            )+
+        }
+    ) => {
+    pastey::paste! {
+
+
 /// The common definition that wrap around all create contexts, for both request and response.
 /// Create contexts are used to pass additional information to the server or receive additional
 /// information from the server in the CREATE request and response.
@@ -323,22 +324,18 @@ pub enum CreateAction {
 /// This is meant to be used within a [`ChainedItemList<T>`][smb_fscc::ChainedItemList<T>]!
 ///
 /// Reference: MS-SMB2 2.2.13, 2.2.14
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[[<smb_ $struct_name:lower _binrw>]]
 #[bw(import(is_last: bool))]
 #[allow(clippy::manual_non_exhaustive)]
-pub struct CreateContext<T>
-where
-    for<'a> T: BinRead<Args<'a> = (&'a Vec<u8>,)> + BinWrite<Args<'static> = ()>,
+pub struct [<CreateContext $struct_name:camel>]
 {
     #[bw(calc = PosMarker::default())]
     #[br(temp)]
     _name_offset: PosMarker<u16>, // relative to ChainedItem (any access must consider +CHAINED_ITEM_PREFIX_SIZE from start of item)
     #[bw(calc = u16::try_from(name.len()).unwrap())]
-    name_length: u16,
-    #[bw(calc = 0)]
     #[br(temp)]
-    _reserved: u16,
+    name_length: u16,
+    reserved: u16,
     #[bw(calc = PosMarker::default())]
     #[br(temp)]
     _data_offset: PosMarker<u16>,
@@ -359,29 +356,18 @@ where
     #[bw(write_with = PosMarker::write_roff_size_b_plus, args(&_data_offset, &_data_length, &_name_offset, CHAINED_ITEM_PREFIX_SIZE as u64))]
     #[br(seek_before = _name_offset.seek_from_if(_data_offset.value as u64 - CHAINED_ITEM_PREFIX_SIZE as u64, _data_length.value > 0))]
     #[br(map_stream = |s| s.take_seek(_data_length.value.into()), args(&name))]
-    pub data: T,
+    pub data: [<CreateContext $struct_name Data>],
 }
-
-macro_rules! create_context_half {
-    (
-        $struct_name:ident {
-            $(
-                $context_type:ident : $req_type:ty,
-            )+
-        }
-    ) => {
-    pastey::paste! {
 
 /// This trait is automatically implemented for all
 #[doc = concat!("[`Create", stringify!($struct_name), "`]")]
 /// create context values.
-pub trait [<CreateContextData $struct_name Value>] : Into<CreateContext<[<CreateContext $struct_name Data>]>> {
+pub trait [<CreateContextData $struct_name Value>] : Into<[<CreateContext $struct_name:camel>]> {
     const CONTEXT_NAME: &'static [u8];
 }
 
 #[doc = concat!("The [`Create", stringify!($struct_name), "`] Context data enum. ")]
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[[<smb_ $struct_name:lower _binrw>]]
 #[br(import(name: &Vec<u8>))]
 pub enum [<CreateContext $struct_name Data>] {
     $(
@@ -407,7 +393,7 @@ impl [<CreateContext $struct_name Data>] {
             }
         }
 
-        pub fn [<first_ $context_type:snake>](val: &Vec<CreateContext<Self>>) -> Option<&$req_type> {
+        pub fn [<first_ $context_type:snake>](val: &Vec<[<CreateContext $struct_name:camel>]>) -> Option<&$req_type> {
             for ctx in val {
                 if let Self::[<$context_type:camel $struct_name>](a) = &ctx.data {
                     return Some(a);
@@ -423,16 +409,16 @@ $(
         const CONTEXT_NAME: &'static [u8] = CreateContextType::[<$context_type:upper _NAME>];
     }
 
-    impl From<$req_type> for CreateContext<[<CreateContext $struct_name Data>]> {
+    impl From<$req_type> for [<CreateContext $struct_name:camel>] {
         fn from(req: $req_type) -> Self {
-            CreateContext::<[<CreateContext $struct_name Data>]> {
+            [<CreateContext $struct_name:camel>] {
                 name: <$req_type as [<CreateContextData $struct_name Value>]>::CONTEXT_NAME.to_vec(),
                 data: [<CreateContext $struct_name Data>]::[<$context_type:camel $struct_name>](req),
             }
         }
     }
 
-    impl TryInto<$req_type> for CreateContext<[<CreateContext $struct_name Data>]> {
+    impl TryInto<$req_type> for [<CreateContext $struct_name:camel>] {
         type Error = crate::SmbMsgError;
         fn try_into(self) -> crate::Result<$req_type> {
             match self.data {
@@ -445,8 +431,6 @@ $(
         }
     }
 )+
-
-pub type [<$struct_name CreateContext>] = CreateContext<[<CreateContext $struct_name Data>]>;
         }
     }
 }
@@ -540,63 +524,44 @@ make_create_context!(
     svhdxopendev: b"\x9C\xCB\xCF\x9E\x04\xC1\xE6\x43\x98\x0E\x15\x8D\xA1\xF6\xEC\x83", SvhdxOpenDeviceContext, SvhdxOpenDeviceContext;
 );
 
-macro_rules! empty_req {
-    ($name:ident) => {
-        #[binrw::binrw]
-        #[derive(Debug, PartialEq, Eq)]
-        pub struct $name;
-    };
-}
-
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq, Default)]
+#[smb_request_binrw]
 pub struct DurableHandleRequest {
-    #[bw(calc = 0)]
-    #[br(assert(durable_request == 0))]
-    durable_request: u128,
+    reserved: u128,
 }
 
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq, Default)]
+#[smb_response_binrw]
 pub struct DurableHandleResponse {
-    #[bw(calc = 0)]
-    #[br(temp)]
-    _reserved: u64,
+    reserved: u64,
 }
 
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_request_binrw]
 pub struct DurableHandleReconnect {
     pub durable_request: FileId,
 }
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq, Default)]
+#[smb_request_binrw]
+#[derive(Default)]
 pub struct QueryMaximalAccessRequest {
     #[br(parse_with = binread_if_has_data)]
     pub timestamp: Option<FileTime>,
 }
 
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_request_binrw]
 pub struct AllocationSize {
     pub allocation_size: u64,
 }
 
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_request_binrw]
 pub struct TimewarpToken {
     pub timestamp: FileTime,
 }
 
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_message_binrw]
 pub enum RequestLease {
     RqLsReqv1(RequestLeaseV1),
     RqLsReqv2(RequestLeaseV2),
 }
 
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_message_binrw]
 pub struct RequestLeaseV1 {
     pub lease_key: u128,
     pub lease_state: LeaseState,
@@ -607,8 +572,8 @@ pub struct RequestLeaseV1 {
     #[br(assert(lease_duration == 0))]
     lease_duration: u64,
 }
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+
+#[smb_message_binrw]
 pub struct RequestLeaseV2 {
     pub lease_key: u128,
     pub lease_state: LeaseState,
@@ -618,9 +583,7 @@ pub struct RequestLeaseV2 {
     lease_duration: u64,
     pub parent_lease_key: u128,
     pub epoch: u16,
-    #[bw(calc = 0)]
-    #[br(temp)]
-    _reserved: u16,
+    reserved: u16,
 }
 
 #[smb_dtyp::mbitfield]
@@ -632,16 +595,14 @@ pub struct LeaseFlags {
     __: B29,
 }
 
-empty_req!(QueryOnDiskIdReq);
+#[smb_request_binrw]
+pub struct QueryOnDiskIdReq;
 
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_request_binrw]
 pub struct DurableHandleRequestV2 {
     pub timeout: u32,
     pub flags: DurableHandleV2Flags,
-    #[bw(calc = 0)]
-    #[br(temp)]
-    _reserved: u64,
+    reserved: u64,
     pub create_guid: Guid,
 }
 
@@ -654,61 +615,41 @@ pub struct DurableHandleV2Flags {
     __: B30,
 }
 
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_request_binrw]
 pub struct DurableHandleReconnectV2 {
     file_id: FileId,
     create_guid: Guid,
     flags: DurableHandleV2Flags,
 }
 
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_request_response(size = 20)]
 pub struct AppInstanceId {
-    #[bw(calc = 20)]
-    #[br(assert(structure_size == 20))]
-    structure_size: u16,
-    #[bw(calc = 0)]
-    #[br(temp)]
-    _reserved: u16,
+    reserved: u16,
     pub app_instance_id: Guid,
 }
 
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_request_response(size = 24)]
 pub struct AppInstanceVersion {
-    #[bw(calc = 24)]
-    #[br(assert(structure_size == 24))]
-    structure_size: u16,
-    #[bw(calc = 0)]
-    #[br(temp)]
-    _reserved: u16,
-    #[bw(calc = 0)]
-    #[br(temp)]
-    _reserved2: u32,
+    reserved: u16,
+    reserved: u16,
+    reserved: u32,
     pub app_instance_version_high: u64,
     pub app_instance_version_low: u64,
 }
 
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_message_binrw]
 pub enum SvhdxOpenDeviceContext {
     V1(SvhdxOpenDeviceContextV1),
     V2(SvhdxOpenDeviceContextV2),
 }
 
 /// [MS-RSVD sections 2.2.4.12 and 2.2.4.32.](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rsvd/6ec20c83-a6a7-49d5-ae60-72070f91d5e0)
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_message_binrw]
 pub struct SvhdxOpenDeviceContextV1 {
     pub version: u32,
     pub has_initiator_id: Boolean,
-    #[bw(calc = 0)]
-    #[br(temp)]
-    _reserved1: u8,
-    #[bw(calc = 0)]
-    #[br(temp)]
-    _reserved2: u16,
+    reserved: u8,
+    reserved: u16,
     pub initiator_id: Guid,
     pub flags: u32,
     pub originator_flags: u32,
@@ -717,17 +658,12 @@ pub struct SvhdxOpenDeviceContextV1 {
     pub initiator_host_name: [u16; 126 / 2],
 }
 
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_message_binrw]
 pub struct SvhdxOpenDeviceContextV2 {
     pub version: u32,
     pub has_initiator_id: Boolean,
-    #[bw(calc = 0)]
-    #[br(temp)]
-    _reserved1: u8,
-    #[bw(calc = 0)]
-    #[br(temp)]
-    _reserved2: u16,
+    reserved: u8,
+    reserved: u16,
     pub initiator_id: Guid,
     pub flags: u32,
     pub originator_flags: u32,
@@ -741,8 +677,7 @@ pub struct SvhdxOpenDeviceContextV2 {
     pub virtual_size: u64,
 }
 
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_response_binrw]
 pub struct QueryMaximalAccessResponse {
     // MS-SMB2, 2.2.14.2.5: "MaximalAccess field is valid only if QueryStatus is STATUS_SUCCESS.
     // he status code MUST be one of those defined in [MS-ERREF] section 2.3"
@@ -771,18 +706,14 @@ impl QueryMaximalAccessResponse {
     }
 }
 
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_response_binrw]
 pub struct QueryOnDiskIdResp {
     pub file_id: u64,
     pub volume_id: u64,
-    #[bw(calc = 0)]
-    #[br(temp)]
-    _reserved: u128,
+    reserved: u128,
 }
 
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_response_binrw]
 pub struct DH2QResp {
     pub timeout: u32,
     pub flags: DurableHandleV2Flags,
@@ -793,18 +724,14 @@ pub struct CloseRequest {
     #[bw(calc = CloseFlags::new().with_postquery_attrib(true))]
     #[br(assert(_flags == CloseFlags::new().with_postquery_attrib(true)))]
     _flags: CloseFlags,
-    #[bw(calc = 0)]
-    #[br(temp)]
-    _reserved: u32,
+    reserved: u32,
     pub file_id: FileId,
 }
 
 #[smb_response(size = 60)]
 pub struct CloseResponse {
     pub flags: CloseFlags,
-    #[bw(calc = 0)]
-    #[br(temp)]
-    _reserved: u32,
+    reserved: u32,
     pub creation_time: FileTime,
     pub last_access_time: FileTime,
     pub last_write_time: FileTime,
@@ -891,6 +818,7 @@ mod tests {
             0000000000000000000000000000000000000000"
     }
 
+    #[cfg(feature = "client")]
     use smb_dtyp::make_guid;
 
     test_response_read! {
@@ -934,39 +862,38 @@ mod tests {
      */
 
     use smb_dtyp::guid;
-    use smb_tests::*;
     use time::macros::datetime;
 
     // Tests for the following contexts are not implemented here:
     // - ExtA - already tested in smb-fscc & query info/ea tests
     // - SecD - already tested in smb-dtyp tests
 
-    test_binrw! {
+    test_binrw_request! {
         struct DurableHandleRequest {} => "00000000000000000000000000000000"
     }
 
-    test_binrw! {
+    test_binrw_response! {
         struct DurableHandleResponse {} => "0000000000000000"
     }
 
-    test_binrw! {
+    test_binrw_request! {
         struct QueryMaximalAccessRequest {
             timestamp: None,
         } => ""
     }
 
-    test_binrw! {
+    test_binrw_response! {
         struct QueryMaximalAccessResponse {
             query_status: Status::Success,
             maximal_access: FileAccessMask::from_bytes(0x001f01ffu32.to_le_bytes()),
         } => "00000000ff011f00"
     }
 
-    test_binrw! {
+    test_binrw_request! {
         struct QueryOnDiskIdReq {} => ""
     }
 
-    test_binrw! {
+    test_binrw_response! {
         struct QueryOnDiskIdResp {
             file_id: 0x2ae7010000000400,
             volume_id: 0xd9cf17b000000000,
@@ -974,7 +901,7 @@ mod tests {
     }
 
     // TODO(TEST): RqLsV1
-    test_binrw! {
+    test_binrw_request! {
         RequestLease => rqlsv2: RequestLease::RqLsReqv2(RequestLeaseV2 {
             lease_key: guid!("b69d8fd8-184b-7c4d-a359-40c8a53cd2b7").as_u128(),
             lease_state: LeaseState::new().with_read_caching(true).with_handle_caching(true),
@@ -984,13 +911,13 @@ mod tests {
         }) => "d88f9db64b184d7ca35940c8a53cd2b703000000040000000000000000000000a38e152ddb5549f79cd1095496a0662700000000"
     }
 
-    test_binrw! {
+    test_binrw_request! {
         struct AllocationSize {
             allocation_size: 0xebfef0d4c000,
         } => "00c0d4f0feeb0000"
     }
 
-    test_binrw! {
+    test_binrw_request! {
         struct DurableHandleRequestV2 {
             create_guid: guid!("5a08e844-45c3-234d-87c6-596d2bc8bca5"),
             flags: DurableHandleV2Flags::new(),
@@ -998,20 +925,20 @@ mod tests {
         } => "0000000000000000000000000000000044e8085ac3454d2387c6596d2bc8bca5"
     }
 
-    test_binrw! {
+    test_binrw_response! {
         struct DH2QResp {
             timeout: 180000,
             flags: DurableHandleV2Flags::new(),
         } => "20bf020000000000"
     }
 
-    test_binrw! {
+    test_binrw_request! {
         struct TimewarpToken {
             timestamp: datetime!(2025-01-20 15:36:20.277632400).into(),
         } => "048fa10d516bdb01"
     }
 
-    test_binrw! {
+    test_binrw_request! {
         struct DurableHandleReconnectV2 {
             file_id: guid!("000000b3-0008-0000-dd00-000008000000").into(),
             create_guid: guid!("a23e428c-1bac-7e43-8451-91f9f2277a95"),

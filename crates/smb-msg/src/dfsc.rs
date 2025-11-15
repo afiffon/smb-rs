@@ -5,11 +5,11 @@
 use binrw::{NullWideString, io::TakeSeekExt, prelude::*};
 use modular_bitfield::prelude::*;
 use smb_dtyp::binrw_util::prelude::*;
+use smb_msg_derive::smb_request_binrw;
 
 /// [MS-DFSC 2.2.2](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-dfsc/663c9b38-41b8-4faa-b6f6-a4576b4cea62>):
 /// DFS referral requests are sent in the form of an REQ_GET_DFS_REFERRAL message, by using an appropriate transport as specified in section 2.1.
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_request_binrw]
 pub struct ReqGetDfsReferral {
     /// An integer that indicates the highest DFS referral version understood by the client. The DFS referral versions specified by this document are 1 through 4 inclusive. A DFS client MUST support DFS referral version 1 through the version number set in this field. The referral response messages are referral version dependent and are specified in sections 2.2.5.1 through 2.2.5.4.
     pub max_referral_level: ReferralLevel,
@@ -19,8 +19,7 @@ pub struct ReqGetDfsReferral {
 
 /// The DFS referral version supported by the client.
 /// See [`ReqGetDfsReferral::max_referral_level`].
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_request_binrw]
 #[brw(repr(u16))]
 pub enum ReferralLevel {
     /// DFS referral version 1
@@ -33,8 +32,7 @@ pub enum ReferralLevel {
     V4 = 4,
 }
 
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_request_binrw]
 pub struct ReqGetDfsReferralEx {
     /// An integer that indicates the highest DFS referral version understood by the client. The DFS referral versions specified by this document are 1 through 4 inclusive. A DFS client MUST support DFS referral version 1 through the version number set in this field. The referral response messages are referral version dependent and are specified in sections 2.2.5.1 through 2.2.5.4.
     pub max_referral_level: u16,
@@ -54,8 +52,7 @@ pub struct DfsRequestFlags {
 }
 
 /// RequestData is part of the REQ_GET_DFS_REFERRAL_EX message (section 2.2.3).
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_request_binrw]
 pub struct DfsRequestData {
     #[bw(try_calc = request_file_name.size().try_into())]
     request_file_name_length: u16,
@@ -83,7 +80,7 @@ impl DfsRequestData {
 #[derive(Debug, PartialEq, Eq)]
 pub struct RespGetDfsReferral {
     pub path_consumed: u16,
-    // #[bw(try_calc = referral_entries.len().try_into())]
+    #[bw(try_calc = referral_entries.len().try_into())]
     #[br(temp)]
     number_of_referrals: u16,
     pub referral_header_flags: ReferralHeaderFlags,
@@ -396,16 +393,17 @@ struct ReferralEntryFlagsV4 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use smb_tests::*;
+    use crate::*;
 
-    test_binrw! {
+    test_binrw_request! {
         struct ReqGetDfsReferral {
             max_referral_level: ReferralLevel::V4,
             request_file_name: r"\ADC.aviv.local\dfs\Docs".into(),
         } => "04005c004100440043002e0061007600690076002e006c006f00630061006c005c006400660073005c0044006f00630073000000"
     }
 
-    test_binrw_read! {
+    #[cfg(feature = "client")]
+    smb_tests::test_binrw_read! {
         struct RespGetDfsReferral {
             path_consumed: 48,
             referral_header_flags: ReferralHeaderFlags::new().with_storage_servers(true),

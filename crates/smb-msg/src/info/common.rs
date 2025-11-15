@@ -3,8 +3,8 @@
 use binrw::prelude::*;
 use modular_bitfield::prelude::*;
 
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+#[smb_message_binrw]
+#[derive(Copy, Clone)]
 #[brw(repr(u8))]
 pub enum InfoType {
     File = 0x1,
@@ -157,3 +157,4 @@ macro_rules! query_info_data {
 }
 
 pub(crate) use query_info_data;
+use smb_msg_derive::smb_message_binrw;

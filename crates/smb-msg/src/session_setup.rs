@@ -96,6 +96,7 @@ pub struct SessionSetupResponse {
     #[br(temp)]
     _security_buffer_offset: PosMarker<u16>,
     #[bw(calc = u16::try_from(buffer.len()).unwrap())]
+    #[br(temp)]
     security_buffer_length: u16,
     #[br(count = security_buffer_length)]
     #[bw(write_with = PosMarker::write_aoff, args(&_security_buffer_offset))]
@@ -130,9 +131,7 @@ impl SessionFlags {
 #[smb_request(size = 4)]
 #[derive(Default)]
 pub struct LogoffRequest {
-    #[bw(calc = 0)]
-    #[br(temp)]
-    _reserved: u16,
+    reserved: u16,
 }
 
 /// SMB2 LOGOFF Response packet sent by the server in response to a LOGOFF Request.
@@ -141,9 +140,7 @@ pub struct LogoffRequest {
 #[smb_response(size = 4)]
 #[derive(Default)]
 pub struct LogoffResponse {
-    #[bw(calc = 0)]
-    #[br(temp)]
-    _reserved: u16,
+    reserved: u16,
 }
 
 #[cfg(test)]

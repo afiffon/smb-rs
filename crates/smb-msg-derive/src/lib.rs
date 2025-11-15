@@ -104,9 +104,9 @@ fn make_size_field(size: u16) -> syn::Field {
 /// This function expands the input struct by:
 /// - Adding a `_structure_size: u16` field at the beginning of the struct,
 ///   with appropriate `binrw` attributes to calculate and assert its value.
-/// - Adding `binrw` attributes to the struct itself, depending on whether it's
-///   a request or response, and the enabled features (server/client).
 fn modify_smb_msg(msg_type: SmbMsgType, item: TokenStream, attr: TokenStream) -> TokenStream {
+    let item = common_struct_changes(msg_type, item);
+
     let mut item = parse_macro_input!(item as ItemStruct);
     let attr = parse_macro_input!(attr as SmbReqResAttr);
 
@@ -125,11 +125,76 @@ fn modify_smb_msg(msg_type: SmbMsgType, item: TokenStream, attr: TokenStream) ->
         }
     }
 
-    let cfg_attrs = msg_type.get_attr();
-
     TokenStream::from(quote! {
+        #item
+    })
+}
+
+/// Performs common changes to binrw structs.
+///
+/// - Adding `binrw` attributes to the struct itself, depending on whether it's
+///   a request or response, and the enabled features (server/client).
+/// - Modifying any field named `reserved` to have `#[br(temp)]` and `#[bw(calc = Default::default())]` attributes.
+fn common_struct_changes(msg_type: SmbMsgType, item: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(item as DeriveInput);
+
+    let is_struct = matches!(input.data, syn::Data::Struct(_));
+
+    let cfg_attrs = msg_type.get_attr();
+    let output_all = TokenStream::from(quote! {
         #cfg_attrs
         #[derive(Debug, PartialEq, Eq)]
+        #input
+    });
+
+    if !is_struct {
+        return output_all;
+    }
+
+    let mut item = parse_macro_input!(output_all as ItemStruct);
+
+    if let Fields::Named(ref mut fields) = item.fields {
+        for field in fields.named.iter_mut() {
+            if field.ident.as_ref().is_some_and(|id| *id == "reserved") {
+                if field.vis != syn::Visibility::Inherited {
+                    return syn::Error::new_spanned(
+                        &field.vis,
+                        "reserved field must have no visibility defined",
+                    )
+                    .to_compile_error()
+                    .into();
+                }
+
+                // Put a new, unique name for the field to avoid conflicts.
+                let line_number = proc_macro2::Span::call_site().start().line;
+                field.ident = Some(syn::Ident::new(
+                    &format!("_reserved{}", line_number),
+                    proc_macro2::Span::call_site(),
+                ));
+
+                // Add attributes to the reserved field.
+                field.attrs.push(syn::parse_quote! {
+                    #[br(temp)]
+                });
+
+                // If type is [u8; N], we can set it to zeroed array. Otherwise, use Default::default().
+                let default_bw_calc = if let syn::Type::Array(arr) = &field.ty {
+                    let len = arr.len.clone();
+                    syn::parse_quote! {
+                        #[bw(calc = [0; #len])]
+                    }
+                } else {
+                    syn::parse_quote! {
+                        #[bw(calc = Default::default())]
+                    }
+                };
+
+                field.attrs.push(default_bw_calc);
+            }
+        }
+    }
+
+    TokenStream::from(quote! {
         #item
     })
 }
@@ -163,13 +228,7 @@ pub fn smb_request_response(attr: TokenStream, input: TokenStream) -> TokenStrea
 /// Conditionally adds `BinRead` or `BinWrite` depending on server/client features.
 #[proc_macro_attribute]
 pub fn smb_request_binrw(_attr: TokenStream, input: TokenStream) -> TokenStream {
-    let item = parse_macro_input!(input as DeriveInput);
-
-    let to_add = SmbMsgType::Request.get_attr();
-    TokenStream::from(quote! {
-        #to_add
-        #item
-    })
+    common_struct_changes(SmbMsgType::Request, input)
 }
 
 /// Proc-macro for adding binrw attributes to SMB response structs.
@@ -177,11 +236,13 @@ pub fn smb_request_binrw(_attr: TokenStream, input: TokenStream) -> TokenStream 
 /// Conditionally adds `BinRead` or `BinWrite` depending on server/client features.
 #[proc_macro_attribute]
 pub fn smb_response_binrw(_attr: TokenStream, input: TokenStream) -> TokenStream {
-    let item = parse_macro_input!(input as DeriveInput);
+    common_struct_changes(SmbMsgType::Response, input)
+}
 
-    let to_add = SmbMsgType::Response.get_attr();
-    TokenStream::from(quote! {
-        #to_add
-        #item
-    })
+/// Proc-macro for adding binrw attributes to SMB request and response structs.
+///
+/// Adds both `BinRead` and `BinWrite` attributes.
+#[proc_macro_attribute]
+pub fn smb_message_binrw(_attr: TokenStream, input: TokenStream) -> TokenStream {
+    common_struct_changes(SmbMsgType::Both, input)
 }

@@ -18,10 +18,3 @@ proc-macro = true
 quote = "1"
 proc-macro2 = "1"
 syn = { version = "2", features = ["full"] }
-
-[features]
-default = []
-
-both = ["client", "server"]
-server = []
-client = []

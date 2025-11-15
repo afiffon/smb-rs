@@ -13,26 +13,21 @@ use smb_dtyp::binrw_util::prelude::*;
 
 #[smb_request(size = 24)]
 pub struct FlushRequest {
-    #[bw(calc = 0)]
-    #[br(temp)]
-    _reserved1: u16,
-    #[bw(calc = 0)]
-    #[br(temp)]
-    _reserved2: u32,
+    reserved: u16,
+    reserved: u32,
     pub file_id: FileId,
 }
 
 #[smb_response(size = 4)]
 #[derive(Default)]
 pub struct FlushResponse {
-    #[bw(calc = 0)]
-    #[br(temp)]
-    _reserved: u16,
+    reserved: u16,
 }
 
 #[smb_request(size = 49)]
 pub struct ReadRequest {
     #[bw(calc = 0)]
+    #[br(temp)]
     _padding: u8,
     pub flags: ReadFlags,
     pub length: u32,
@@ -43,20 +38,25 @@ pub struct ReadRequest {
     // Therefore, all the related fields are set to zero.
     #[bw(calc = CommunicationChannel::None)]
     #[br(assert(channel == CommunicationChannel::None))]
+    #[br(temp)]
     channel: CommunicationChannel,
     #[bw(calc = 0)]
     #[br(assert(_remaining_bytes == 0))]
+    #[br(temp)]
     _remaining_bytes: u32,
     #[bw(calc = 0)]
     #[br(assert(_read_channel_info_offset == 0))]
+    #[br(temp)]
     _read_channel_info_offset: u16,
     #[bw(calc = 0)]
     #[br(assert(_read_channel_info_length == 0))]
+    #[br(temp)]
     _read_channel_info_length: u16,
 
     // Well, that's a little awkward, but since we never provide a blob, and yet,
     // Msft decided it makes sense to make the structure size 0x31, we need to add this padding.
     #[bw(calc = 0)]
+    #[br(temp)]
     _pad_blob_placeholder: u8,
 }
 
@@ -69,20 +69,18 @@ pub struct ReadResponse {
     #[bw(calc = PosMarker::default())]
     #[br(temp)]
     _data_offset: PosMarker<u8>,
-    #[bw(calc = 0)]
-    #[br(temp)]
-    _reserved: u8,
+    reserved: u8,
     #[bw(try_calc = buffer.len().try_into())]
     #[br(assert(_data_length > 0))] // sanity
+    #[br(temp)]
     _data_length: u32,
     #[bw(calc = 0)]
     #[br(assert(_data_remaining == 0))]
+    #[br(temp)]
     _data_remaining: u32,
 
     // No RDMA support -- always zero, for both reserved and flags case:
-    #[bw(calc = 0)]
-    #[br(temp)]
-    _reserved2: u32,
+    reserved: u32,
 
     #[br(seek_before = SeekFrom::Start(_data_offset.value as u64))]
     #[br(count = _data_length)]
@@ -103,8 +101,7 @@ pub struct ReadFlags {
     __: B6,
 }
 
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_request_binrw]
 #[brw(repr(u32))]
 pub enum CommunicationChannel {
     None = 0,
@@ -168,18 +165,22 @@ impl WriteRequest {
 
 #[smb_response(size = 17)]
 pub struct WriteResponse {
-    #[bw(calc = 0)]
-    #[br(temp)]
-    _reserved: u16,
+    reserved: u16,
     pub count: u32,
+
     #[bw(calc = 0)] // reserved
     #[br(assert(_remaining_bytes == 0))]
+    #[br(temp)]
     _remaining_bytes: u32,
+
     #[bw(calc = 0)] // reserved
     #[br(assert(_write_channel_info_offset == 0))]
+    #[br(temp)]
     _write_channel_info_offset: u16,
+
     #[bw(calc = 0)] // reserved
     #[br(assert(_write_channel_info_length == 0))]
+    #[br(temp)]
     _write_channel_info_length: u16,
 }
 
@@ -196,9 +197,8 @@ mod tests {
     use crate::*;
 
     use super::*;
-    use smb_tests::*;
 
-    test_binrw! {
+    test_binrw_request! {
         struct FlushRequest {
             file_id: [
                 0x14, 0x04, 0x00, 0x00, 0x0c, 0x00, 0x00, 0x00, 0x51, 0x00, 0x10, 0x00, 0x0c, 0x00,
@@ -208,7 +208,7 @@ mod tests {
         } => "1800000000000000140400000c000000510010000c000000"
     }
 
-    test_binrw! {
+    test_binrw_response! {
         struct FlushResponse {  } => "04 00 00 00"
     }
 
@@ -246,7 +246,7 @@ mod tests {
         } => "3100700016000000cdab341200000000140400000c000000510010000c00000000000000000000000000000000000000"
     }
 
-    test_binrw! {
+    test_binrw_response! {
         struct WriteResponse { count: 0xbeefbaaf, } => "11000000afbaefbe0000000000000000"
     }
 }

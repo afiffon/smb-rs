@@ -3,6 +3,7 @@
 use std::io::Cursor;
 
 use binrw::prelude::*;
+use smb_msg_derive::smb_message_binrw;
 const SIGNATURE_SIZE: usize = 16;
 
 /// The nonce used for encryption.
@@ -11,8 +12,7 @@ const SIGNATURE_SIZE: usize = 16;
 pub type EncryptionNonce = [u8; 16];
 
 /// This header is used by the client or server when sending encrypted messages
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_message_binrw]
 #[brw(little, magic(b"\xfdSMB"))]
 pub struct EncryptedHeader {
     /// The 16-byte signature of the message generated using negotiated encryption algorithm
@@ -21,9 +21,7 @@ pub struct EncryptedHeader {
     pub nonce: EncryptionNonce,
     /// The size, in bytes, of the SMB2 message.
     pub original_message_size: u32,
-    #[bw(calc = 0)]
-    #[br(temp)]
-    _reserved: u16,
+    reserved: u16,
     #[bw(calc = 1)]
     // MUST be set to 1, in SMB3.1.1 because encrypted, in others because encryption algorithm is AES128-CCM (0x1)
     #[br(assert(_flags == 1))]
@@ -57,8 +55,7 @@ impl EncryptedHeader {
 }
 
 /// An entirely encrypted SMB2 message, that includes both the encrypted header and the encrypted message.
-#[binrw::binrw]
-#[derive(Debug)]
+#[smb_message_binrw]
 pub struct EncryptedMessage {
     pub header: EncryptedHeader,
     #[br(parse_with = binrw::helpers::until_eof)]

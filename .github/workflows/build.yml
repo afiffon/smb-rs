@@ -61,7 +61,10 @@ jobs:
           cargo clippy --verbose --no-default-features --features "${{ matrix.compile_features }},${COMMON_FEATURES}" -- -Dclippy::all
       - name: Tests/${{ matrix.compile_features }}
         run: |
-          cargo test -p smb-msg --features both -- --nocapture
+          cargo test -p smb-msg --features client --no-default-features -- --nocapture
+          cargo test -p smb-msg --features server --no-default-features -- --nocapture
+          cargo test -p smb-msg --features both --no-default-features -- --nocapture
+
           cargo test --no-default-features --features "${{ matrix.compile_features }},${COMMON_FEATURES}" -- --nocapture
           # Test without encryption and compression
           cargo test --no-default-features --features "${{ matrix.compile_features }},sign" -- --nocapture

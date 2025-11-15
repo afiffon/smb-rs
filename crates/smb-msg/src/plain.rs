@@ -71,7 +71,6 @@ macro_rules! make_content {
         pastey::paste!{
 
 #[smb_request_binrw]
-#[derive(Debug)]
 #[brw(import(command: &Command))]
 #[brw(little)]
 pub enum RequestContent {
@@ -93,7 +92,6 @@ pub enum RequestContent {
 
 
 #[smb_response_binrw]
-#[derive(Debug)]
 #[brw(import(command: &Command))]
 #[brw(little)]
 pub enum ResponseContent {
@@ -276,7 +274,6 @@ macro_rules! make_plain {
 
         /// A plain, single, SMB2 message.
         #[$binrw_attr]
-        #[derive(Debug)]
         #[brw(little)]
         pub struct [<Plain $suffix>] {
             #[brw(assert(header.flags.server_to_redir() == $server_to_redir))]

@@ -25,10 +25,7 @@ use crate::{
 /// MS-SMB2 2.2.31
 #[smb_request(size = 57)]
 pub struct IoctlRequest {
-    /// Must be set to 0 and ignored by server
-    #[bw(calc = 0)]
-    #[br(temp)]
-    _reserved: u16,
+    reserved: u16,
     /// Control code of the FSCTL/IOCTL method to execute
     pub ctl_code: u32,
     /// File identifier on which to perform the command
@@ -46,19 +43,18 @@ pub struct IoctlRequest {
     /// Must be set to 0 by client
     #[bw(calc = 0)]
     #[br(assert(output_offset == 0))]
+    #[br(temp)]
     output_offset: u32,
     /// Must be set to 0 by client
     #[bw(calc = 0)]
     #[br(assert(output_count == 0))]
+    #[br(temp)]
     output_count: u32,
     /// Maximum bytes server can return for output data in response
     pub max_output_response: u32,
     /// Indicates whether this is an IOCTL (0x00000000) or FSCTL (0x00000001) request
     pub flags: IoctlRequestFlags,
-    /// Must be set to 0 and ignored by server
-    #[bw(calc = 0)]
-    #[br(temp)]
-    _reserved2: u32,
+    reserved: u32,
 
     /// Variable-length buffer containing input data for the FSCTL/IOCTL command
     #[bw(write_with = PosMarker::write_aoff_size, args(&_input_offset, &_input_count))]
@@ -66,9 +62,28 @@ pub struct IoctlRequest {
     pub buffer: IoctlReqData,
 }
 
+#[cfg(all(feature = "client", not(feature = "server")))]
 /// This is a helper trait that defines, for a certain FSCTL request type,
 /// the response type and their matching FSCTL code.
 pub trait FsctlRequest: for<'a> BinWrite<Args<'a> = ()> + Into<IoctlReqData> {
+    type Response: FsctlResponseContent;
+    const FSCTL_CODE: FsctlCodes;
+}
+
+#[cfg(all(feature = "server", not(feature = "client")))]
+/// This is a helper trait that defines, for a certain FSCTL request type,
+/// the response type and their matching FSCTL code.
+pub trait FsctlRequest: for<'a> BinRead<Args<'a> = ()> + Into<IoctlReqData> {
+    type Response: FsctlResponseContent;
+    const FSCTL_CODE: FsctlCodes;
+}
+
+#[cfg(all(feature = "server", feature = "client"))]
+/// This is a helper trait that defines, for a certain FSCTL request type,
+/// the response type and their matching FSCTL code.
+pub trait FsctlRequest:
+    for<'a> BinWrite<Args<'a> = ()> + for<'b> BinRead<Args<'b> = ()> + Into<IoctlReqData>
+{
     type Response: FsctlResponseContent;
     const FSCTL_CODE: FsctlCodes;
 }
@@ -77,8 +92,7 @@ macro_rules! ioctl_req_data {
     ($($fsctl:ident: $model:ty, $response:ty, )+) => {
         pastey::paste! {
 
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_request_binrw]
 #[br(import(ctl_code: u32, flags: IoctlRequestFlags))]
 pub enum IoctlReqData {
     $(
@@ -167,10 +181,7 @@ pub struct IoctlRequestFlags {
 /// MS-SMB2 2.2.32
 #[smb_response(size = 49)]
 pub struct IoctlResponse {
-    /// Must be set to 0 and ignored by client
-    #[bw(calc = 0)]
-    #[br(temp)]
-    _reserved: u16,
+    reserved: u16,
     /// Control code of the FSCTL/IOCTL method that was executed
     pub ctl_code: u32,
     /// File identifier on which the command was performed
@@ -183,6 +194,7 @@ pub struct IoctlResponse {
     #[bw(assert(in_buffer.is_empty()))] // there is an exception for pass-through operations.
     #[bw(try_calc = in_buffer.len().try_into())]
     #[br(assert(input_count == 0))]
+    #[br(temp)]
     input_count: u32,
 
     /// Offset to output data buffer (either 0 or input_offset + input_count rounded to multiple of 8)
@@ -192,16 +204,13 @@ pub struct IoctlResponse {
     output_offset: PosMarker<u32>,
     /// Size in bytes of the output data
     #[bw(try_calc = out_buffer.len().try_into())]
+    #[br(temp)]
     output_count: u32,
 
-    /// Must be set to 0 and ignored by client
-    #[bw(calc = 0)] // reserved.
-    #[br(assert(flags == 0))]
-    flags: u32,
-    /// Must be set to 0 and ignored by client
-    #[bw(calc = 0)]
-    #[br(temp)]
-    _reserved2: u32,
+    /// Flags
+    reserved: u32,
+
+    reserved: u32,
 
     /// Input data buffer (typically empty for responses except pass-through operations)
     #[br(seek_before = SeekFrom::Start(input_offset.value.into()))]
@@ -217,6 +226,7 @@ pub struct IoctlResponse {
 }
 
 impl IoctlResponse {
+    #[cfg(feature = "client")]
     /// Parses the FSCTL response output buffer into the specified response type.
     ///
     /// Validates that the control code matches the expected FSCTL codes for the

@@ -2,6 +2,7 @@ use std::io::Cursor;
 
 use binrw::prelude::*;
 use modular_bitfield::prelude::*;
+use smb_msg_derive::{smb_message_binrw, smb_request_response};
 
 #[derive(BinRead, BinWrite, Debug, PartialEq, Eq, Clone, Copy)]
 #[brw(repr(u16))]
@@ -62,8 +63,8 @@ macro_rules! make_status {
     ) => {
 
 /// NT Status codes.
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[smb_message_binrw]
+#[derive(Clone, Copy)]
 #[repr(u32)]
 #[brw(repr(u32))]
 pub enum Status {
@@ -166,14 +167,10 @@ make_status! {
 }
 
 /// Sync and Async SMB2 Message header.
-#[binrw::binrw]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[smb_request_response(size = 64)]
+#[derive(Clone)]
 #[brw(magic(b"\xfeSMB"), little)]
 pub struct Header {
-    #[bw(calc = Self::STRUCT_SIZE as u16)]
-    #[br(temp)]
-    #[br(assert(_structure_size == Self::STRUCT_SIZE as u16))]
-    _structure_size: u16,
     pub credit_charge: u16,
     /// NT status. Use the [`Header::status()`] method to convert to a [`Status`].
     pub status: u32,

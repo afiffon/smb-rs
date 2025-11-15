@@ -28,10 +28,7 @@ pub struct ChangeNotifyRequest {
     pub file_id: FileId,
     /// Specifies the types of changes to monitor. Multiple trigger conditions can be chosen.
     pub completion_filter: NotifyFilter,
-    /// Reserved field that must not be used and must be set to 0.
-    #[bw(calc = 0)]
-    #[br(temp)]
-    _reserved: u32,
+    reserved: u32,
 }
 
 /// Flags for SMB2 CHANGE_NOTIFY Request indicating how the operation must be processed.
@@ -129,15 +126,11 @@ pub struct ChangeNotifyResponse {
 /// an implementation-specific intent without expecting any response from the client.
 ///
 /// Reference: MS-SMB2 2.2.44.1
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_response_binrw]
 pub struct ServerToClientNotification {
     /// Size of the SMB2_SERVER_TO_CLIENT_NOTIFICATION structure.
     structure_size: u16,
-    /// Reserved field that must not be used and must be set to 0.
-    #[bw(calc = 0)]
-    #[br(temp)]
-    _reserved: u16,
+    reserved: u16,
     /// Valid SMB_NOTIFICATION_ID enumeration notification type value.
     #[bw(calc = notification.get_type())]
     notification_type: NotificationType,
@@ -149,8 +142,8 @@ pub struct ServerToClientNotification {
 /// SMB_NOTIFICATION_ID enumeration values for server to client notifications.
 ///
 /// Reference: MS-SMB2 2.2.44.1
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_response_binrw]
+#[derive(Clone, Copy)]
 #[brw(repr(u32))]
 pub enum NotificationType {
     /// Indicates the notification structure is SMB2_NOTIFY_SESSION_CLOSED.
@@ -161,8 +154,7 @@ pub enum NotificationType {
 /// based on the notification type.
 ///
 /// Reference: MS-SMB2 2.2.44.1
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_response_binrw]
 #[br(import(notification_type: NotificationType))]
 pub enum Notification {
     /// Session closed notification structure.
@@ -183,24 +175,19 @@ impl Notification {
 /// type is SmbNotifySessionClosed.
 ///
 /// Reference: MS-SMB2 2.2.44.2
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_response_binrw]
 pub struct NotifySessionClosed {
-    /// Reserved field that must not be used and must be set to 0.
-    #[bw(calc = 0)]
-    #[br(temp)]
-    _reserved: u32,
+    reserved: u32,
 }
 
 #[cfg(test)]
 mod tests {
     use crate::*;
     use smb_dtyp::guid::Guid;
-    use smb_tests::*;
 
     use super::*;
 
-    test_binrw! {
+    test_binrw_request! {
         struct ChangeNotifyRequest {
             flags: NotifyFlags::new(),
             output_buffer_length: 2048,
@@ -216,7 +203,7 @@ mod tests {
         } => "2000000000080000d10500000c000000190000000c0000001700000000000000"
     }
 
-    test_binrw! {
+    test_binrw_response! {
         struct ChangeNotifyResponse => pending {
             buffer: Default::default(),
         } => "0900000000000000"

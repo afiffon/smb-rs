@@ -8,9 +8,7 @@ use smb_msg_derive::*;
 #[smb_request_response(size = 4)]
 #[derive(Default)]
 pub struct EchoMessage {
-    #[bw(calc = 0)]
-    #[br(temp)]
-    _reserved: u16,
+    reserved: u16,
 }
 
 pub use EchoMessage as EchoRequest;

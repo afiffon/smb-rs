@@ -26,9 +26,7 @@ pub struct QueryInfoRequest {
     #[bw(calc = PosMarker::default())]
     #[br(temp)]
     _input_buffer_offset: PosMarker<u16>,
-    #[bw(calc = 0)]
-    #[br(temp)]
-    _reserved: u16,
+    reserved: u16,
     #[bw(calc = PosMarker::default())]
     #[br(temp)]
     input_buffer_length: PosMarker<u32>,
@@ -49,8 +47,7 @@ pub struct QueryInfoRequest {
 
 /// Helper enum to specify the information class for query info requests,
 /// when it is applicable.
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_request_binrw]
 #[br(import(info_type: InfoType))]
 #[bw(import(info_type: &InfoType))]
 pub enum QueryInfoClass {
@@ -110,8 +107,7 @@ pub struct QueryInfoFlags {
 /// Other information types have no input data.
 ///
 /// MS-SMB2 2.2.37
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_request_binrw]
 #[brw(import(file_info_class: &QueryInfoClass, query_info_type: InfoType))]
 pub enum GetInfoRequestData {
     /// The query quota to perform.
@@ -132,16 +128,13 @@ pub enum GetInfoRequestData {
 /// Specifies the quota information to query.
 ///
 /// MS-SMB2 2.2.37.1
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_message_binrw]
 pub struct QueryQuotaInfo {
     /// If true, server returns a single quota entry. Otherwise, returns maximum entries that fit.
     pub return_single: Boolean,
     /// If true, quota information is read from the beginning. Otherwise, continues from previous enumeration.
     pub restart_scan: Boolean,
-    #[bw(calc = 0)]
-    #[br(temp)]
-    _reserved: u16,
+    reserved: u16,
     #[bw(calc = PosMarker::default())]
     #[br(temp)]
     sid_list_length: PosMarker<u32>, // type 1: list of FileGetQuotaInformation structs.
@@ -236,8 +229,7 @@ impl QueryInfoResponse {
 ///
 /// Call [`QueryInfoResponseData::parse`] to convert to the appropriate data format
 /// based on the info type from the request.
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_response_binrw]
 pub struct QueryInfoResponseData {
     #[br(parse_with = binrw::helpers::until_eof)]
     data: Vec<u8>,

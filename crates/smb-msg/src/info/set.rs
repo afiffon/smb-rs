@@ -33,10 +33,7 @@ pub struct SetInfoRequest {
     #[bw(calc = PosMarker::default())]
     #[br(temp)]
     _buffer_offset: PosMarker<u16>,
-    /// Must be set to 0 and ignored by server
-    #[bw(calc = 0)]
-    #[br(temp)]
-    _reserved: u16,
+    reserved: u16,
     /// Additional information for security operations or 0 for other operations
     pub additional_information: AdditionalInfo,
     /// File identifier of the file or named pipe on which to perform the set operation
@@ -62,8 +59,7 @@ query_info_data! {
 /// For Security and Quota operations, the class is set to null byte (0).
 ///
 /// MS-SMB2 2.2.39
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_message_binrw]
 pub enum SetInfoClass {
     /// File information class (e.g., FileBasicInformation, FileRenameInformation)
     File(SetFileInfoClass),
@@ -137,7 +133,6 @@ mod tests {
     use super::*;
     use crate::*;
     use smb_dtyp::*;
-    use smb_tests::*;
 
     test_request! {
         SetInfo {
@@ -152,7 +147,7 @@ mod tests {
         } => "2100010a3a0000006000000000000000420000000e000000050010000e0000000000000000000000000000000000000026000000680065006c006c006f005c006d0079004e0065007700460069006c0065002e00740078007400"
     }
 
-    test_binrw! {
+    test_binrw_response! {
         struct SetInfoResponse {} => "0200"
     }
 }

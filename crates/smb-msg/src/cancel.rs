@@ -11,17 +11,15 @@ use smb_msg_derive::*;
 #[smb_request(size = 4)]
 #[derive(Default)]
 pub struct CancelRequest {
-    #[bw(calc = 0)]
-    #[br(temp)]
-    _reserved: u16,
+    reserved: u16,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use smb_tests::*;
+    use crate::*;
 
-    test_binrw! {
+    test_binrw_request! {
         struct CancelRequest {} => "04000000"
     }
 }

@@ -16,12 +16,8 @@ pub struct OplockBreakMsg {
     /// For acknowledgments, this is the lowered level the client accepts.
     /// For responses, this is the granted level.
     oplock_level: u8,
-    #[bw(calc = 0)]
-    #[br(temp)]
-    _reserved: u8,
-    #[bw(calc = 0)]
-    #[br(temp)]
-    _reserved2: u32,
+    reserved: u8,
+    reserved: u32,
     /// The file identifier on which the oplock break occurred.
     file_id: FileId,
 }
@@ -47,20 +43,22 @@ pub struct LeaseBreakNotify {
     new_lease_state: LeaseState,
     #[bw(calc = 0)]
     #[br(assert(break_reason == 0))]
+    #[br(temp)]
     break_reason: u32,
     #[bw(calc = 0)]
     #[br(assert(access_mask_hint == 0))]
+    #[br(temp)]
     access_mask_hint: u32,
     #[bw(calc = 0)]
     #[br(assert(share_mask_hint == 0))]
+    #[br(temp)]
     share_mask_hint: u32,
 }
 
 /// Oplock level values used in oplock break operations.
 ///
 /// Reference: MS-SMB2 2.2.23.1
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_message_binrw]
 #[brw(repr(u8))]
 pub enum OplockLevel {
     /// No oplock is available.
@@ -106,9 +104,7 @@ pub type OplockBreakResponse = OplockBreakMsg;
 /// Reference: MS-SMB2 2.2.24.2, 2.2.25.2
 #[smb_request_response(size = 36)]
 pub struct LeaseBreakAckResponse {
-    #[bw(calc = 0)]
-    #[br(temp)]
-    _reserved: u16,
+    reserved: u16,
     #[bw(calc = 0)] // reserved
     #[br(assert(flags == 0))]
     flags: u32,
@@ -133,10 +129,11 @@ pub type LeaseBreakResponse = LeaseBreakAckResponse;
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use smb_tests::*;
+    use crate::*;
 
-    test_binrw! {
+    use super::*;
+
+    test_binrw_response! {
         struct LeaseBreakNotify {
             new_epoch: 2,
             ack_required: 1,
@@ -148,14 +145,14 @@ mod tests {
         } => "2c000200010000009e61c8705d165e31d492a01b0cbb3af20300000000000000000000000000000000000000"
     }
 
-    test_binrw! {
+    test_binrw_response! {
         struct LeaseBreakAck {
             lease_key: "70c8619e-165d-315e-d492-a01b0cbb3af2".parse().unwrap(),
             lease_state: LeaseState::new(),
         } => "24000000000000009e61c8705d165e31d492a01b0cbb3af2000000000000000000000000"
     }
 
-    test_binrw! {
+    test_binrw_response! {
         struct LeaseBreakAckResponse {
             lease_key: "70c8619e-165d-315e-d492-a01b0cbb3af2".parse().unwrap(),
             lease_state: LeaseState::new(),

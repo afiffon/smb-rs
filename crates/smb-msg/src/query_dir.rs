@@ -92,6 +92,7 @@ pub struct QueryDirectoryResponse {
     output_buffer_offset: PosMarker<u16>,
     /// Length in bytes of the directory enumeration being returned.
     #[bw(try_calc = output_buffer.len().try_into())]
+    #[br(temp)]
     output_buffer_length: u32,
     /// Directory enumeration data in the format specified by the FileInformationClass.
     /// Format is as specified in MS-FSCC section 2.4 for the specific file information class.

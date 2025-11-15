@@ -80,8 +80,7 @@ pub struct TreeConnectRequest {
 /// Used to encode additional properties in SMB2 TREE_CONNECT requests and responses.
 ///
 /// Reference: MS-SMB2 2.2.9.2
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_request_binrw]
 pub struct TreeConnectContext {
     /// Type of context in the Data field
     #[bw(calc = 1)]
@@ -89,9 +88,7 @@ pub struct TreeConnectContext {
     context_type: u16,
     /// Length in bytes of the Data field
     data_length: u16,
-    #[bw(calc = 0)]
-    #[br(temp)]
-    _reserved: u32,
+    reserved: u32,
     data: RemotedIdentityTreeConnect,
 }
 
@@ -272,9 +269,7 @@ impl TreeConnectRequest {
 pub struct TreeConnectResponse {
     /// Type of share being accessed
     pub share_type: ShareType,
-    #[bw(calc = 0)]
-    #[br(temp)]
-    _reserved: u8,
+    reserved: u8,
     /// Properties for this share
     pub share_flags: ShareFlags,
     /// Capabilities for this share
@@ -370,8 +365,8 @@ pub struct TreeCapabilities {
 /// Type of share being accessed
 ///
 /// Reference: MS-SMB2 2.2.10
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[smb_response_binrw]
+#[derive(Clone, Copy)]
 #[brw(repr(u8))]
 pub enum ShareType {
     /// Physical disk share
@@ -391,9 +386,7 @@ pub enum ShareType {
 #[smb_request(size = 4)]
 #[derive(Default)]
 pub struct TreeDisconnectRequest {
-    #[bw(calc = 0)]
-    #[br(temp)]
-    _reserved: u16,
+    reserved: u16,
 }
 
 /// SMB2 TREE_DISCONNECT Response
@@ -404,15 +397,11 @@ pub struct TreeDisconnectRequest {
 #[smb_response(size = 4)]
 #[derive(Default)]
 pub struct TreeDisconnectResponse {
-    #[bw(calc = 0)]
-    #[br(temp)]
-    _reserved: u16,
+    reserved: u16,
 }
 
 #[cfg(test)]
 mod tests {
-    use smb_tests::*;
-
     use crate::*;
 
     use super::*;
@@ -426,7 +415,7 @@ mod tests {
         } => "0900000048002a005c005c006100640063002e0061007600690076002e006c006f00630061006c005c004900500043002400"
     }
 
-    test_binrw! {
+    test_binrw_response! {
         struct TreeConnectResponse {
             share_type: ShareType::Disk,
             share_flags: ShareFlags::new().with_access_based_directory_enum(true),

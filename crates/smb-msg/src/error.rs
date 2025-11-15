@@ -15,12 +15,10 @@ pub struct ErrorResponse {
     /// For SMB dialect 3.1.1, if nonzero, the ErrorData field is formatted as
     /// a variable-length array of SMB2 ERROR Context structures.
     #[bw(try_calc = error_data.len().try_into())]
+    #[br(temp)]
     _error_context_count: u8,
 
-    /// Reserved field that must not be used and must be set to 0
-    #[bw(calc = 0)]
-    #[br(temp)]
-    _reserved: u8,
+    reserved: u8,
 
     #[bw(calc = PosMarker::default())]
     #[br(temp)]
@@ -37,8 +35,7 @@ pub struct ErrorResponse {
 /// Each context must start at an 8-byte aligned boundary relative to the start of the SMB2 ERROR Response.
 ///
 /// Reference: MS-SMB2 2.2.2.1
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_response_binrw]
 pub struct ErrorResponseContext {
     // each context item should be aligned to 8 bytes,
     // relative to the start of the error context.
@@ -95,8 +92,7 @@ impl ErrorResponseContext {
 /// An identifier for the error context in SMB2 ERROR Context structures.
 ///
 /// Reference: MS-SMB2 2.2.2.1
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_response_binrw]
 #[brw(repr(u32))]
 pub enum ErrorId {
     /// Unless otherwise specified, all errors defined in the MS-SMB2 protocol use this error ID

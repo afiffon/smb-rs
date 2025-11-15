@@ -3,6 +3,7 @@
 use std::io::SeekFrom;
 
 use smb_dtyp::binrw_util::prelude::*;
+use smb_msg_derive::smb_message_binrw;
 
 use super::negotiate::CompressionAlgorithm;
 use binrw::io::TakeSeekExt;
@@ -14,8 +15,7 @@ use binrw::prelude::*;
 /// The variant is determined by the compression flags.
 ///
 /// MS-SMB2 2.2.42
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_message_binrw]
 #[brw(little)]
 pub enum CompressedMessage {
     Unchained(CompressedUnchainedMessage),
@@ -44,8 +44,7 @@ impl CompressedMessage {
 /// Only valid for SMB 3.1.1 dialect.
 ///
 /// MS-SMB2 2.2.42.1
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_message_binrw]
 #[brw(magic(b"\xfcSMB"), little)]
 pub struct CompressedUnchainedMessage {
     /// Size of the uncompressed data segment
@@ -82,8 +81,7 @@ impl CompressedUnchainedMessage {
 /// is SMB2_COMPRESSION_FLAG_CHAINED (0x0001). Only valid for SMB 3.1.1 dialect.
 ///
 /// MS-SMB2 2.2.42.2
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_message_binrw]
 #[brw(magic(b"\xfcSMB"), little)]
 pub struct CompressedChainedMessage {
     /// Size of the uncompressed data segment
@@ -113,8 +111,7 @@ fn add_original_size_to_total_length(algo: &CompressionAlgorithm) -> u64 {
 /// compressed payload in a chained message. Only valid for SMB 3.1.1 dialect.
 ///
 /// MS-SMB2 2.2.42.2.1
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[smb_message_binrw]
 pub struct CompressedChainedItem {
     /// Compression algorithm used for this payload
     pub compression_algorithm: CompressionAlgorithm,

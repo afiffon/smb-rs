@@ -115,40 +115,28 @@ macro_rules! _test_generic_impl {
     };
 }
 
-/// Internal macro, do not use directly. See [test_request] and [test_response].
-///
-/// - This macro expands to test impl for read and write,
-/// through [`_test_generic_impl`] using [`_test_generic_read`] and [`_test_generic_write`].
-macro_rules! _test_read_write_generic {
-    (
-        $req_or_resp:ident => $($v:tt)+
-    ) => {
-        _test_generic_impl! {
-            _test_generic_write, $req_or_resp => $($v)*
-        }
-        _test_generic_impl! {
-            _test_generic_read, $req_or_resp => $($v)*
-        }
-    }
-}
-
 pub(crate) use _test_generic_impl;
 pub(crate) use _test_generic_read;
 pub(crate) use _test_generic_write;
-pub(crate) use _test_read_write_generic;
 
 macro_rules! test_request {
     ($($v:tt)+) => {
-        _test_read_write_generic! {
-            Request => $($v)+
+        $crate::test_request_write! {
+            $($v)+
+        }
+        $crate::test_request_read! {
+            $($v)+
         }
     };
 }
 
 macro_rules! test_response {
     ($($v:tt)+) => {
-        _test_read_write_generic! {
-            Response => $($v)+
+        $crate::test_response_write! {
+            $($v)+
+        }
+        $crate::test_response_read! {
+            $($v)+
         }
     };
 }
@@ -156,14 +144,16 @@ macro_rules! test_response {
 #[allow(unused_macros)]
 macro_rules! test_request_read {
     ($($v:tt)+) => {
+        #[cfg(feature = "server")]
         _test_generic_impl! {
-            _test_generic_read, Request => $($v)*
+            _test_generic_read, Request => $($v)+
         }
     };
 }
 
 macro_rules! test_response_read {
     ($($v:tt)+) => {
+        #[cfg(feature = "client")]
         _test_generic_impl! {
             _test_generic_read, Response => $($v)*
         }
@@ -173,8 +163,9 @@ macro_rules! test_response_read {
 #[allow(unused_macros)]
 macro_rules! test_request_write {
     ($($v:tt)+) => {
+        #[cfg(feature = "client")]
         _test_generic_impl! {
-            _test_generic_write, Request => $($v)*
+            _test_generic_write, Request => $($v)+
         }
     };
 }
@@ -182,12 +173,45 @@ macro_rules! test_request_write {
 #[allow(unused_macros)]
 macro_rules! test_response_write {
     ($($v:tt)+) => {
+        #[cfg(feature = "server")]
         _test_generic_impl! {
-            _test_generic_write, Response => $($v)*
+            _test_generic_write, Response => $($v)+
         }
     };
 }
 
+macro_rules! test_binrw_request {
+    (
+        $($v:tt)+
+    ) => {
+        #[cfg(feature = "client")]
+        ::smb_tests::test_binrw_write! {
+            $($v)+
+        }
+        #[cfg(feature = "server")]
+        ::smb_tests::test_binrw_read! {
+            $($v)+
+        }
+    };
+}
+
+macro_rules! test_binrw_response {
+    (
+        $($v:tt)+
+    ) => {
+        #[cfg(feature = "server")]
+        ::smb_tests::test_binrw_write! {
+            $($v)+
+        }
+        #[cfg(feature = "client")]
+        ::smb_tests::test_binrw_read! {
+            $($v)+
+        }
+    };
+}
+
+pub(crate) use test_binrw_request;
+pub(crate) use test_binrw_response;
 pub(crate) use test_request;
 #[allow(unused_imports)]
 pub(crate) use test_request_read;
