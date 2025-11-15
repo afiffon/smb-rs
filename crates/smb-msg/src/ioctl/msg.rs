@@ -27,6 +27,7 @@ use crate::{
 pub struct IoctlRequest {
     /// Must be set to 0 and ignored by server
     #[bw(calc = 0)]
+    #[br(temp)]
     _reserved: u16,
     /// Control code of the FSCTL/IOCTL method to execute
     pub ctl_code: u32,
@@ -56,7 +57,8 @@ pub struct IoctlRequest {
     pub flags: IoctlRequestFlags,
     /// Must be set to 0 and ignored by server
     #[bw(calc = 0)]
-    reserved2: u32,
+    #[br(temp)]
+    _reserved2: u32,
 
     /// Variable-length buffer containing input data for the FSCTL/IOCTL command
     #[bw(write_with = PosMarker::write_aoff_size, args(&_input_offset, &_input_count))]
@@ -167,6 +169,7 @@ pub struct IoctlRequestFlags {
 pub struct IoctlResponse {
     /// Must be set to 0 and ignored by client
     #[bw(calc = 0)]
+    #[br(temp)]
     _reserved: u16,
     /// Control code of the FSCTL/IOCTL method that was executed
     pub ctl_code: u32,
@@ -197,7 +200,8 @@ pub struct IoctlResponse {
     flags: u32,
     /// Must be set to 0 and ignored by client
     #[bw(calc = 0)]
-    reserved2: u32,
+    #[br(temp)]
+    _reserved2: u32,
 
     /// Input data buffer (typically empty for responses except pass-through operations)
     #[br(seek_before = SeekFrom::Start(input_offset.value.into()))]

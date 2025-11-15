@@ -177,6 +177,7 @@ query_dir_type! {
         /// The length, in bytes, of the short name string.
         pub short_name_length: u8,
         #[bw(calc = 0)]
+        #[br(temp)]
         _reserved1: u8,
         /// The short (8.3) name of the file.
         pub short_name: FileName83, // 8.3
@@ -209,6 +210,7 @@ query_dir_type! {
         /// The length, in bytes, of the short name string.
         pub short_name_length: u8,
         #[bw(calc = 0)]
+        #[br(temp)]
         _reserved1: u8,
         /// The short (8.3) name of the file.
         pub short_name: FileName83, // 8.3
@@ -237,10 +239,12 @@ query_dir_type! {
         /// The length, in bytes, of the short name string.
         pub short_name_length: u8,
         #[bw(calc = 0)]
+        #[br(temp)]
         _reserved1: u8,
         /// The short (8.3) name of the file.
         pub short_name: FileName83, // 8.3
         #[bw(calc = 0)]
+        #[br(temp)]
         _reserved2: u16,
         /// The file ID.
         pub file_id: u64,
@@ -265,6 +269,7 @@ query_dir_type! {
     /// [MS-FSCC 2.4.24](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/ab8e7558-899c-4be1-a7c5-3a9ae8ab76a0>)
     pub struct FileIdFullDirectoryInformation {
         #[bw(calc = 0)]
+        #[br(temp)]
         _reserved: u32,
         /// The file ID.
         pub file_id: u64,
@@ -296,6 +301,7 @@ query_dir_type! {
         /// The length, in bytes, of the short name string.
         pub short_name_length: u8,
         #[bw(calc = 0)]
+        #[br(temp)]
         _reserved1: u8,
         /// The short (8.3) name of the file.
         pub short_name: FileName83, // 8.3

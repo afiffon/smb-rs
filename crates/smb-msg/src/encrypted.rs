@@ -22,6 +22,7 @@ pub struct EncryptedHeader {
     /// The size, in bytes, of the SMB2 message.
     pub original_message_size: u32,
     #[bw(calc = 0)]
+    #[br(temp)]
     _reserved: u16,
     #[bw(calc = 1)]
     // MUST be set to 1, in SMB3.1.1 because encrypted, in others because encryption algorithm is AES128-CCM (0x1)

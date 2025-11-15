@@ -14,8 +14,10 @@ use smb_dtyp::binrw_util::prelude::*;
 #[smb_request(size = 24)]
 pub struct FlushRequest {
     #[bw(calc = 0)]
+    #[br(temp)]
     _reserved1: u16,
     #[bw(calc = 0)]
+    #[br(temp)]
     _reserved2: u32,
     pub file_id: FileId,
 }
@@ -24,6 +26,7 @@ pub struct FlushRequest {
 #[derive(Default)]
 pub struct FlushResponse {
     #[bw(calc = 0)]
+    #[br(temp)]
     _reserved: u16,
 }
 
@@ -67,6 +70,7 @@ pub struct ReadResponse {
     #[br(temp)]
     _data_offset: PosMarker<u8>,
     #[bw(calc = 0)]
+    #[br(temp)]
     _reserved: u8,
     #[bw(try_calc = buffer.len().try_into())]
     #[br(assert(_data_length > 0))] // sanity
@@ -77,6 +81,7 @@ pub struct ReadResponse {
 
     // No RDMA support -- always zero, for both reserved and flags case:
     #[bw(calc = 0)]
+    #[br(temp)]
     _reserved2: u32,
 
     #[br(seek_before = SeekFrom::Start(_data_offset.value as u64))]
@@ -164,6 +169,7 @@ impl WriteRequest {
 #[smb_response(size = 17)]
 pub struct WriteResponse {
     #[bw(calc = 0)]
+    #[br(temp)]
     _reserved: u16,
     pub count: u32,
     #[bw(calc = 0)] // reserved

@@ -166,6 +166,7 @@ pub struct FileCompressionInformation {
     pub cluster_shift: u8,
 
     #[bw(calc = [0; 3])]
+    #[br(temp)]
     _reserved: [u8; 3],
 }
 
@@ -233,6 +234,7 @@ pub struct FileNetworkOpenInformation {
     /// The file attributes.
     pub file_attributes: FileAttributes,
     #[bw(calc = 0)]
+    #[br(temp)]
     _reserved: u32,
 }
 
@@ -372,7 +374,8 @@ pub struct FileStandardInformation {
     /// Set to TRUE if the file is a directory.
     pub directory: Boolean,
     #[bw(calc = 0)]
-    reserved: u16,
+    #[br(temp)]
+    _reserved: u16,
 }
 
 /// Enumerate the data streams for a file.

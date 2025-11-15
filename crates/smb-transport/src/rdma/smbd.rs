@@ -26,6 +26,7 @@ pub struct SmbdNegotiateRequest {
     max_version: u16,
 
     #[bw(calc = 0)]
+    #[br(temp)]
     _reserved: u16,
 
     pub credits_requested: u16,
@@ -53,6 +54,7 @@ pub struct SmbdNegotiateResponse {
     #[br(assert(negotiated_version == SMBD_VERSION))]
     negotiated_version: u16,
     #[bw(calc = 0)]
+    #[br(temp)]
     _reserved: u16,
 
     pub credits_requested: u16,
@@ -82,6 +84,7 @@ pub struct SmbdDataTransferHeader {
     pub flags: SmbdDataTransferFlags,
 
     #[bw(calc = 0)]
+    #[br(temp)]
     _reserved: u16,
 
     pub remaining_data_length: u32,

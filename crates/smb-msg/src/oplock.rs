@@ -17,9 +17,11 @@ pub struct OplockBreakMsg {
     /// For responses, this is the granted level.
     oplock_level: u8,
     #[bw(calc = 0)]
+    #[br(temp)]
     _reserved: u8,
     #[bw(calc = 0)]
-    reserved2: u32,
+    #[br(temp)]
+    _reserved2: u32,
     /// The file identifier on which the oplock break occurred.
     file_id: FileId,
 }
@@ -105,6 +107,7 @@ pub type OplockBreakResponse = OplockBreakMsg;
 #[smb_request_response(size = 36)]
 pub struct LeaseBreakAckResponse {
     #[bw(calc = 0)]
+    #[br(temp)]
     _reserved: u16,
     #[bw(calc = 0)] // reserved
     #[br(assert(flags == 0))]

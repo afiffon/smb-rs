@@ -89,7 +89,9 @@ pub struct TreeConnectContext {
     context_type: u16,
     /// Length in bytes of the Data field
     data_length: u16,
-    reserved: u32,
+    #[bw(calc = 0)]
+    #[br(temp)]
+    _reserved: u32,
     data: RemotedIdentityTreeConnect,
 }
 
@@ -271,6 +273,7 @@ pub struct TreeConnectResponse {
     /// Type of share being accessed
     pub share_type: ShareType,
     #[bw(calc = 0)]
+    #[br(temp)]
     _reserved: u8,
     /// Properties for this share
     pub share_flags: ShareFlags,
@@ -389,6 +392,7 @@ pub enum ShareType {
 #[derive(Default)]
 pub struct TreeDisconnectRequest {
     #[bw(calc = 0)]
+    #[br(temp)]
     _reserved: u16,
 }
 
@@ -401,6 +405,7 @@ pub struct TreeDisconnectRequest {
 #[derive(Default)]
 pub struct TreeDisconnectResponse {
     #[bw(calc = 0)]
+    #[br(temp)]
     _reserved: u16,
 }
 

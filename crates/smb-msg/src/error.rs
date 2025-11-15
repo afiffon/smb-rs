@@ -18,8 +18,8 @@ pub struct ErrorResponse {
     _error_context_count: u8,
 
     /// Reserved field that must not be used and must be set to 0
-    #[br(assert(_reserved == 0))]
     #[bw(calc = 0)]
+    #[br(temp)]
     _reserved: u8,
 
     #[bw(calc = PosMarker::default())]

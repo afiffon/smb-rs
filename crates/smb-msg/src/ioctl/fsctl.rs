@@ -52,6 +52,7 @@ pub struct SrvCopychunkCopy {
     /// Reserved field. Must not be used and must be reserved.
     /// This field must be set to zero by the client, and ignored by the server.
     #[bw(calc = 0)]
+    #[br(temp)]
     _reserved: u32,
     /// An array of SRV_COPYCHUNK packets describing the ranges to be copied.
     /// The array length must equal chunk_count * size of SRV_COPYCHUNK.
@@ -81,6 +82,7 @@ pub struct SrvCopychunkItem {
     pub length: u32,
     /// Reserved field. Should be set to zero and must be ignored on receipt.
     #[bw(calc = 0)]
+    #[br(temp)]
     _reserved: u32,
 }
 
@@ -154,7 +156,8 @@ pub struct NetworkResiliencyRequest {
     /// Reserved field. Must not be used and must be reserved.
     /// The client must set this to zero, and the server must ignore it on receipt.
     #[bw(calc = 0)]
-    pub _reserved: u32,
+    #[br(temp)]
+    _reserved: u32,
 }
 
 impl IoctlRequestContent for NetworkResiliencyRequest {
@@ -336,6 +339,7 @@ pub struct SrvHashRetrieveHashBased {
     /// Reserved field. Must not be used and must be reserved.
     /// The server must set this field to zero, and the client must ignore it on receipt.
     #[bw(calc = 0)]
+    #[br(temp)]
     _reserved: u32,
     /// A variable-length buffer that contains the retrieved portion of the Content Information File.
     /// TODO: Parse as Content Information File as specified in MS-PCCRC section 2.3.
@@ -364,6 +368,7 @@ pub struct SrvHashRetrieveFileBased {
     /// Reserved field. Must not be used and must be reserved.
     /// The server must set this field to zero, and the client must ignore it on receipt.
     #[bw(calc = 0)]
+    #[br(temp)]
     _reserved: u32,
     /// A variable-length buffer that contains the retrieved portion of the Content Information File.
     /// TODO: Parse as Content Information File as specified in MS-PCCRC section 2.4.
@@ -388,6 +393,7 @@ pub struct NetworkInterfaceInfo {
     pub capability: NetworkInterfaceCapability,
     /// Reserved field. Must be set to zero and the client must ignore it on receipt.
     #[bw(calc = 0)]
+    #[br(temp)]
     _reserved: u32,
     /// The speed of the network interface in bits per second.
     pub link_speed: u64,
@@ -434,6 +440,7 @@ pub struct SocketAddrStorageV4 {
     pub port: u16,
     pub address: u32,
     #[bw(calc = [0; 128 - (2 + 2 + 4)])]
+    #[br(temp)]
     _reserved: [u8; 128 - (2 + 2 + 4)],
 }
 
@@ -452,6 +459,7 @@ pub struct SocketAddrStorageV6 {
     pub address: u128,
     pub scope_id: u32,
     #[bw(calc = [0; 128 - (2 + 2 + 4 + 16 + 4)])]
+    #[br(temp)]
     _reserved: [u8; 128 - (2 + 2 + 4 + 16 + 4)],
 }
 
@@ -698,6 +706,7 @@ pub struct OffloadReadRequest {
     /// Time to Live (TTL) value in milliseconds for the generated Token. A value of 0 indicates a default TTL interval.
     pub token_time_to_live: u32,
     #[bw(calc = 0)]
+    #[br(temp)]
     _reserved: u32,
     /// the file offset, in bytes, of the start of a range of bytes in a file from which to generate the Token.
     /// MUST be aligned to a logical sector boundary on the volume.
