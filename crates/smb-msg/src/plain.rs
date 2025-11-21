@@ -1,3 +1,5 @@
+//! Full plain message implementation.
+
 use binrw::prelude::*;
 
 use super::header::*;
@@ -70,6 +72,9 @@ macro_rules! make_content {
     ) => {
         pastey::paste!{
 
+/// Contains all the variants for a plain SMB2 request message.
+///
+/// For example - read/write/create/close requests, etc.
 #[smb_request_binrw]
 #[brw(import(command: &Command))]
 #[brw(little)]
@@ -90,7 +95,9 @@ pub enum RequestContent {
     LeaseBreakAck(oplock::LeaseBreakAck),
 }
 
-
+/// Contains all the variants for a plain SMB2 response message.
+///
+/// For example - read/write/create/close responses, etc.
 #[smb_response_binrw]
 #[brw(import(command: &Command))]
 #[brw(little)]

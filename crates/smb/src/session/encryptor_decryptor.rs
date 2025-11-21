@@ -1,4 +1,4 @@
-//! SMB Message encryption/decryption implementation.
+//! Message encryption/decryption implementation.
 
 use binrw::prelude::*;
 use rand::RngCore;

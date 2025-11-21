@@ -1,4 +1,4 @@
-//! SMB Session logic module.
+//! Session logic module.
 //!
 //! This module contains the session setup logic, as well as the session message handling,
 //! including encryption and signing of messages.

@@ -1,4 +1,4 @@
-//! Encrypted messages
+//! Encrypted message and header implementation.
 
 use std::io::Cursor;
 

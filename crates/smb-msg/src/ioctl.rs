@@ -1,4 +1,4 @@
-//! SMB2 IOCTL packet implementation
+//! IOCTL requesst and responses implementation, and FSCTLs.
 
 mod common;
 mod fsctl;

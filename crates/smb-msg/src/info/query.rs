@@ -68,6 +68,10 @@ impl Default for QueryInfoClass {
     }
 }
 
+/// Single null (0) byte.
+///
+/// - When reading, asserts that the byte is 0.
+/// - When writing, always writes a 0 byte.
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq, Default)]
 pub struct NullByte {

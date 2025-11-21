@@ -1,3 +1,5 @@
+//! Session setup messages
+
 use binrw::prelude::*;
 use modular_bitfield::prelude::*;
 
@@ -16,9 +18,8 @@ pub struct SessionSetupRequest {
     pub security_mode: SessionSecurityMode,
     /// Protocol capabilities for the client
     pub capabilities: NegotiateCapabilities,
-    #[bw(calc = 0)]
-    #[br(temp)]
-    _channel: u32, // reserved
+    /// Channel (reserved)
+    reserved: u32,
     #[bw(calc = PosMarker::default())]
     #[br(temp)]
     __security_buffer_offset: PosMarker<u16>,

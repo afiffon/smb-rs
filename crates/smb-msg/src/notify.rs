@@ -1,4 +1,4 @@
-//! SMB2 Change Notify Request and Response, and Server to Client Notification
+//! Change Notify Request and Response, and Server to Client Notification messages and related types.
 
 #[cfg(feature = "client")]
 use std::io::SeekFrom;

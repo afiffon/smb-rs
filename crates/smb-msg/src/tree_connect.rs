@@ -1,3 +1,5 @@
+//! Tree (share) connect & disconnect messages
+
 use binrw::prelude::*;
 use binrw::{NullWideString, io::TakeSeekExt};
 use modular_bitfield::prelude::*;

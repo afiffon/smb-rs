@@ -1,3 +1,5 @@
+//! Classic Lock request & response.
+
 use super::FileId;
 use binrw::prelude::*;
 use modular_bitfield::prelude::*;

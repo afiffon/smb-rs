@@ -1,8 +1,12 @@
+//! Full Request & Response enums, including plain or transformed (encrypted/compressed).
+
 use binrw::prelude::*;
 use smb_msg_derive::*;
 
 macro_rules! make_message {
     ($name:ident, $binrw_type:ident, $plain_type:ty) => {
+        #[doc = concat!("This struct represents all the ", stringify!($name), "message types.")]
+        /// - Plain, Encrypted, Compressed, directly after the NetBios header (magic + 24-bit size).
         #[$binrw_type]
         #[brw(little)]
         pub enum $name {

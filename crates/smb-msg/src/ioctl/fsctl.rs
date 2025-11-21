@@ -251,6 +251,7 @@ pub struct SrvRequestResumeKey {
     pub resume_key: [u8; SrvCopychunkCopy::SRV_KEY_LENGTH],
     /// The length, in bytes, of the context information. This field is unused.
     /// The server must set this field to zero, and the client must ignore it on receipt.
+    /// TODO: What?!
     #[bw(calc = 0)]
     #[br(temp)]
     context_length: u32,
@@ -396,7 +397,6 @@ pub struct NetworkInterfaceCapability {
     pub rss: bool,
     /// When set, specifies that the interface is RDMA (Remote Direct Memory Access) capable.
     pub rdma: bool,
-    /// Reserved bits. Must be zero.
     #[skip]
     __: B30,
 }
@@ -538,8 +538,8 @@ pub struct PipeWaitRequest {
     /// Whether the Timeout parameter will be ignored.
     /// FALSE Indicates that the server MUST wait forever. Any value in `timeout` must be ignored.
     pub timeout_specified: Boolean,
-    #[bw(calc = 0)]
-    _padding: u8,
+    /// Reserved (padding)
+    reserved: u8,
     /// A Unicode string that contains the name of the named pipe. Name MUST not include the "\pipe\",
     /// so if the operation was on \\server\pipe\pipename, the name would be "pipename".
     #[br(args {size: SizedStringSize::bytes(name_length)})]
@@ -587,9 +587,8 @@ impl IoctlRequestContent for SetReparsePointRequest {
 
 #[smb_request_binrw]
 pub struct FileLevelTrimRequest {
-    /// Reserved
-    #[bw(calc = 0)]
-    _key: u32,
+    /// Key - reserved
+    reserved: u32,
     #[bw(calc = ranges.len() as u32)]
     num_ranges: u32,
     /// Array of ranges that describe the portions of the file that are to be trimmed.

@@ -1,4 +1,4 @@
-//! SMB2 Cancel Request
+//! Cancel Request
 
 use binrw::prelude::*;
 use smb_msg_derive::*;

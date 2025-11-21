@@ -524,46 +524,78 @@ make_create_context!(
     svhdxopendev: b"\x9C\xCB\xCF\x9E\x04\xC1\xE6\x43\x98\x0E\x15\x8D\xA1\xF6\xEC\x83", SvhdxOpenDeviceContext, SvhdxOpenDeviceContext;
 );
 
+/// Request for a durable handle that can survive brief network disconnections.
+///
+/// Reference: MS-SMB2 2.2.13.2.3
 #[smb_request_binrw]
 pub struct DurableHandleRequest {
     reserved: u128,
 }
 
+/// Response indicating the server has marked the open as durable.
+///
+/// Reference: MS-SMB2 2.2.14.2.3
 #[smb_response_binrw]
 pub struct DurableHandleResponse {
     reserved: u64,
 }
 
+/// Request to reestablish a durable open after being disconnected.
+///
+/// Reference: MS-SMB2 2.2.13.2.4
 #[smb_request_binrw]
 pub struct DurableHandleReconnect {
+    /// The file ID for the open that is being reestablished
     pub durable_request: FileId,
 }
+/// Request for the server to retrieve maximal access information.
+///
+/// Reference: MS-SMB2 2.2.13.2.5
 #[smb_request_binrw]
 #[derive(Default)]
 pub struct QueryMaximalAccessRequest {
+    /// Optional timestamp for the query
     #[br(parse_with = binread_if_has_data)]
     pub timestamp: Option<FileTime>,
 }
 
+/// Specifies the allocation size for a newly created or overwritten file.
+///
+/// Reference: MS-SMB2 2.2.13.2.6
 #[smb_request_binrw]
 pub struct AllocationSize {
+    /// The size, in bytes, that the newly created file must have reserved on disk
     pub allocation_size: u64,
 }
 
+/// Request to open a version of the file at a previous point in time.
+///
+/// Reference: MS-SMB2 2.2.13.2.7
 #[smb_request_binrw]
 pub struct TimewarpToken {
+    /// The timestamp of the version of the file to be opened
     pub timestamp: FileTime,
 }
 
+/// Request for the server to return a lease on a file or directory.
+/// Also used by the server to respond with a granted lease.
+///
+/// Reference: MS-SMB2 2.2.13.2.8, 2.2.13.2.10, 2.2.14.2.10, 2.2.14.2.11
 #[smb_message_binrw]
 pub enum RequestLease {
     RqLsReqv1(RequestLeaseV1),
     RqLsReqv2(RequestLeaseV2),
 }
 
+/// Version 1 lease request and response (SMB 2.1 and 3.x dialect family).
+/// Contains the lease key, state, flags, and duration.
+///
+/// Reference: MS-SMB2 2.2.13.2.8, 2.2.14.2.10
 #[smb_message_binrw]
 pub struct RequestLeaseV1 {
+    /// Client-generated key that identifies the owner of the lease
     pub lease_key: u128,
+    /// The requested lease state
     pub lease_state: LeaseState,
     #[bw(calc = 0)]
     #[br(assert(lease_flags == 0))]
@@ -573,77 +605,123 @@ pub struct RequestLeaseV1 {
     lease_duration: u64,
 }
 
+/// Version 2 lease request and response (SMB 3.x dialect family only).
+/// Includes parent lease key and epoch tracking for lease state changes.
+///
+/// Reference: MS-SMB2 2.2.13.2.10, 2.2.14.2.11
 #[smb_message_binrw]
 pub struct RequestLeaseV2 {
+    /// Client-generated key that identifies the owner of the lease
     pub lease_key: u128,
+    /// The requested lease state
     pub lease_state: LeaseState,
+    /// Lease flags
     pub lease_flags: LeaseFlags,
     #[bw(calc = 0)]
     #[br(assert(lease_duration == 0))]
     lease_duration: u64,
+    /// Key that identifies the owner of the lease for the parent directory
     pub parent_lease_key: u128,
+    /// Epoch value used to track lease state changes
     pub epoch: u16,
     reserved: u16,
 }
 
+/// Flags for lease requests and responses.
+///
+/// Reference: MS-SMB2 2.2.13.2.10, 2.2.14.2.10, 2.2.14.2.11
 #[smb_dtyp::mbitfield]
 pub struct LeaseFlags {
     #[skip]
     __: B2,
+    /// When set, indicates that the ParentLeaseKey is set
     pub parent_lease_key_set: bool,
     #[skip]
     __: B29,
 }
 
+/// Request for the server to return an identifier for the open file.
+///
+/// Reference: MS-SMB2 2.2.13.2.9
 #[smb_request_binrw]
 pub struct QueryOnDiskIdReq;
 
+/// Request for a durable or persistent handle (SMB 3.x dialect family only).
+///
+/// Reference: MS-SMB2 2.2.13.2.11
 #[smb_request_binrw]
 pub struct DurableHandleRequestV2 {
+    /// Time in milliseconds for which the server reserves the handle after failover
     pub timeout: u32,
+    /// Flags indicating whether a persistent handle is requested
     pub flags: DurableHandleV2Flags,
     reserved: u64,
+    /// GUID that identifies the create request
     pub create_guid: Guid,
 }
 
+/// Flags for durable handle v2 requests.
+///
+/// Reference: MS-SMB2 2.2.13.2.11
 #[smb_dtyp::mbitfield]
 pub struct DurableHandleV2Flags {
     #[skip]
     __: bool,
-    pub persistent: bool, // 0x2
+    /// When set, a persistent handle is requested
+    pub persistent: bool,
     #[skip]
     __: B30,
 }
 
+/// Request to reestablish a durable open (SMB 3.x dialect family only).
+///
+/// Reference: MS-SMB2 2.2.13.2.12
 #[smb_request_binrw]
 pub struct DurableHandleReconnectV2 {
+    /// The file ID for the open that is being reestablished
     file_id: FileId,
+    /// Unique ID that identifies the create request
     create_guid: Guid,
+    /// Flags indicating whether a persistent handle is requested
     flags: DurableHandleV2Flags,
 }
 
+/// Application instance identifier (SMB 3.x dialect family only).
+///
+/// Reference: MS-SMB2 2.2.13.2.13
 #[smb_request_response(size = 20)]
 pub struct AppInstanceId {
     reserved: u16,
+    /// Unique ID that identifies an application instance
     pub app_instance_id: Guid,
 }
 
+/// Application instance version (SMB 3.1.1 dialect only).
+///
+/// Reference: MS-SMB2 2.2.13.2.15
 #[smb_request_response(size = 24)]
 pub struct AppInstanceVersion {
     reserved: u16,
     reserved: u16,
     reserved: u32,
+    /// Most significant value of the version
     pub app_instance_version_high: u64,
+    /// Least significant value of the version
     pub app_instance_version_low: u64,
 }
 
+/// Context for opening a shared virtual disk file.
+///
+/// Reference: MS-SMB2 2.2.13.2.14, MS-RSVD 2.2.4.12, 2.2.4.32
 #[smb_message_binrw]
 pub enum SvhdxOpenDeviceContext {
     V1(SvhdxOpenDeviceContextV1),
     V2(SvhdxOpenDeviceContextV2),
 }
 
-/// [MS-RSVD sections 2.2.4.12 and 2.2.4.32.](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rsvd/6ec20c83-a6a7-49d5-ae60-72070f91d5e0)
+/// Version 1 context for opening a shared virtual disk file.
+///
+/// Reference: MS-RSVD 2.2.4.12
 #[smb_message_binrw]
 pub struct SvhdxOpenDeviceContextV1 {
     pub version: u32,
@@ -658,6 +736,9 @@ pub struct SvhdxOpenDeviceContextV1 {
     pub initiator_host_name: [u16; 126 / 2],
 }
 
+/// Version 2 context for opening a shared virtual disk file.
+///
+/// Reference: MS-RSVD 2.2.4.32
 #[smb_message_binrw]
 pub struct SvhdxOpenDeviceContextV2 {
     pub version: u32,
@@ -681,12 +762,12 @@ pub struct SvhdxOpenDeviceContextV2 {
 pub struct QueryMaximalAccessResponse {
     // MS-SMB2, 2.2.14.2.5: "MaximalAccess field is valid only if QueryStatus is STATUS_SUCCESS.
     // he status code MUST be one of those defined in [MS-ERREF] section 2.3"
-    /// Use [`is_success()`][QueryMaximalAccessResponse::is_success] to check if the query was successful.
+    /// Use [`is_success()`][Self::is_success] to check if the query was successful.
     pub query_status: Status,
 
     /// The maximal access mask for the opened file.
     ///
-    /// Use [`access_mask()`][QueryMaximalAccessResponse::access_mask] to get the access mask if the query was successful.
+    /// Use [`maximal_access()`][Self::maximal_access] to get the access mask if the query was successful.
     pub maximal_access: FileAccessMask,
 }
 
@@ -706,43 +787,75 @@ impl QueryMaximalAccessResponse {
     }
 }
 
+/// Response containing disk file and volume identifiers for the opened file.
+///
+/// Reference: MS-SMB2 2.2.14.2.9
 #[smb_response_binrw]
 pub struct QueryOnDiskIdResp {
+    /// 64-bit file identifier for the open on disk
     pub file_id: u64,
+    /// 64-bit volume identifier
     pub volume_id: u64,
     reserved: u128,
 }
 
+/// Response for SMB 3.x durable or persistent handle request.
+/// Indicates successful creation of a durable/persistent handle.
+///
+/// Reference: MS-SMB2 2.2.14.2.12
 #[smb_response_binrw]
 pub struct DH2QResp {
+    /// Time in milliseconds the server waits for client reconnect after failover
     pub timeout: u32,
+    /// Flags indicating whether a persistent handle was granted
     pub flags: DurableHandleV2Flags,
 }
 
+/// The SMB2 CLOSE Request packet is used by the client to close an instance of a file
+/// that was opened previously with a successful SMB2 CREATE Request.
+///
+/// Reference: MS-SMB2 2.2.15
 #[smb_request(size = 24)]
 pub struct CloseRequest {
     #[bw(calc = CloseFlags::new().with_postquery_attrib(true))]
     #[br(assert(_flags == CloseFlags::new().with_postquery_attrib(true)))]
     _flags: CloseFlags,
     reserved: u32,
+    /// The identifier of the open to a file or named pipe that is being closed
     pub file_id: FileId,
 }
 
+/// The SMB2 CLOSE Response packet is sent by the server to indicate that an SMB2 CLOSE Request
+/// was processed successfully.
+///
+/// Reference: MS-SMB2 2.2.16
 #[smb_response(size = 60)]
 pub struct CloseResponse {
     pub flags: CloseFlags,
     reserved: u32,
+    /// The time when the file was created
     pub creation_time: FileTime,
+    /// The time when the file was last accessed
     pub last_access_time: FileTime,
+    /// The time when data was last written to the file
     pub last_write_time: FileTime,
+    /// The time when the file was last modified
     pub change_time: FileTime,
+    /// The size, in bytes, of the data that is allocated to the file
     pub allocation_size: u64,
+    /// The size, in bytes, of the file
     pub endof_file: u64,
+    /// The attributes of the file
     pub file_attributes: FileAttributes,
 }
 
+/// Flags indicating how to process the CLOSE operation.
+///
+/// Reference: MS-SMB2 2.2.15, 2.2.16
 #[smb_dtyp::mbitfield]
 pub struct CloseFlags {
+    /// If set in request, the server MUST set the attribute fields in the response to valid values.
+    /// If set in response, the client MUST use the attribute fields that are returned.
     pub postquery_attrib: bool,
     #[skip]
     __: B15,

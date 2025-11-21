@@ -1,4 +1,4 @@
-//! SMB2 Query and Set Info messages.
+//! Query and Set Info messages.
 
 pub mod common;
 pub mod query;

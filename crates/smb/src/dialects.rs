@@ -180,8 +180,11 @@ impl DialectMethods for Smb311 {
             ));
         }
 
-        let signing_algo = if let Some(signing_algo) = response.get_ctx_signing_algo() {
-            if !crypto::SIGNING_ALGOS.contains(&signing_algo) {
+        let ctx_signing = response.get_ctx_signing_capabilities();
+        let signing_algo = if let Some(signing_algo) =
+            ctx_signing.and_then(|ctx| ctx.signing_algorithms.first())
+        {
+            if !crypto::SIGNING_ALGOS.contains(signing_algo) {
                 return Err(Error::NegotiationError(
                     "Unsupported signing algorithm selected!".into(),
                 ));
@@ -192,8 +195,9 @@ impl DialectMethods for Smb311 {
         };
 
         // Make sure preauth integrity capability is SHA-512, if it exists in response:
-        if let Some(algo) = response.get_ctx_integrity_algo() {
-            if !preauth_hash::SUPPORTED_ALGOS.contains(&algo) {
+        let ctx_integrity = response.get_ctx_preauth_integrity_capabilities();
+        if let Some(algo) = ctx_integrity.and_then(|ctx| ctx.hash_algorithms.first()) {
+            if !preauth_hash::SUPPORTED_ALGOS.contains(algo) {
                 return Err(Error::NegotiationError(
                     "Unsupported preauth integrity algorithm received".into(),
                 ));
@@ -201,8 +205,9 @@ impl DialectMethods for Smb311 {
         }
 
         // And verify that the encryption algorithm is supported.
-        let encryption_cipher = response.get_ctx_encrypt_cipher();
-        if let Some(encryption_cipher) = &encryption_cipher {
+        let encryption = response.get_ctx_encryption_capabilities();
+        let first_cipher = encryption.and_then(|ctx| ctx.ciphers.first());
+        if let Some(encryption_cipher) = first_cipher {
             if !crypto::ENCRYPTING_ALGOS.contains(encryption_cipher) {
                 return Err(Error::NegotiationError(
                     "Unsupported encryption algorithm received".into(),
@@ -214,10 +219,10 @@ impl DialectMethods for Smb311 {
             ));
         }
 
-        let compression = response.get_ctx_compression().cloned();
+        let compression = response.get_ctx_compression_capabilities().cloned();
 
-        state.signing_algo = signing_algo;
-        state.encryption_cipher = encryption_cipher;
+        state.signing_algo = signing_algo.copied();
+        state.encryption_cipher = first_cipher.copied();
         state.compression = compression;
 
         Ok(())

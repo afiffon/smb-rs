@@ -36,12 +36,10 @@ pub struct SMB1NegotiateMessage {
     #[br(assert(_pid_low == 1))]
     #[br(temp)]
     _pid_low: u16,
-    #[bw(calc = 0)]
-    #[br(temp)]
-    _uid: u16,
-    #[bw(calc = 0)]
-    #[br(temp)]
-    _mid: u16,
+    /// uid
+    reserved: u16,
+    /// mid
+    reserved: u16,
     // word count is always 0x0 according to MS-CIFS.
     #[bw(calc = 0)]
     #[br(assert(_word_count == 0))]
@@ -85,6 +83,7 @@ impl Default for SMB1NegotiateMessage {
     }
 }
 
+/// SMB1 Dialect String
 #[derive(BinRead, BinWrite, Debug, PartialEq, Eq, Clone)]
 #[brw(magic(b"\x02"))]
 pub struct Smb1Dialect {

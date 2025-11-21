@@ -1,4 +1,4 @@
-//! SMB2 Set Info Request/Response messages.
+//! Set Info Request/Response messages and related types.
 
 use crate::FileId;
 

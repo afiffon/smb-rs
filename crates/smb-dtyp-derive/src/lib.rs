@@ -1,6 +1,7 @@
 use proc_macro::TokenStream;
 
-/// A helper macro that invokes [`modular_bitfield`] and [`binrw`] derives for bitfield structs.
+/// A helper macro that invokes `modular_bitfield` and `binrw` derives for bitfield structs.
+/// Those must be installed as dependencies in the crate where this macro is used.
 ///
 /// Adds derives for `Debug`, `Default`, `Clone`, `Copy`, `PartialEq`, and `Eq`.
 #[proc_macro_attribute]

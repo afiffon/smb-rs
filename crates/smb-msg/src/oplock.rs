@@ -1,3 +1,5 @@
+//! OpLock messages (requests, responses, notifications)
+
 use crate::FileId;
 use binrw::prelude::*;
 use modular_bitfield::prelude::*;
@@ -105,17 +107,17 @@ pub type OplockBreakResponse = OplockBreakMsg;
 #[smb_request_response(size = 36)]
 pub struct LeaseBreakAckResponse {
     reserved: u16,
-    #[bw(calc = 0)] // reserved
-    #[br(assert(flags == 0))]
-    flags: u32,
+    /// Flags (reserved)
+    reserved: u32,
+
     /// The client-generated key that identifies the owner of the lease.
     lease_key: Guid,
     /// The lease state. For acknowledgments, this must be a subset of the lease state
     /// granted by the server. For responses, this is the requested lease state.
     lease_state: LeaseState,
-    #[bw(calc = 0)] // reserved
-    #[br(assert(lease_duration == 0))]
-    lease_duration: u64,
+
+    /// Lease duration (reserved)
+    reserved: u64,
 }
 
 // Type aliases for lease break operations that use the same structure.

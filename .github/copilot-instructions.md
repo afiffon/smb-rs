@@ -16,3 +16,4 @@
   - Request the documentation page to be used, do not try to look it up yourself. It won't work!
   - Do not simple document helper structures that are not part of the specification and/or produced by macros.
   - This does NOT apply to enums that represent possible field values, for example, or bitfield structs - of course!
+  - NEVER document reserved fields.

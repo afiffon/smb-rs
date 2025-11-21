@@ -1,9 +1,14 @@
+//! Plain Message Header and related types.
+
 use std::io::Cursor;
 
 use binrw::prelude::*;
 use modular_bitfield::prelude::*;
 use smb_msg_derive::{smb_message_binrw, smb_request_response};
 
+/// SMB2/SMB3 protocol command codes.
+///
+/// Reference: MS-SMB2 2.2.1.2
 #[derive(BinRead, BinWrite, Debug, PartialEq, Eq, Clone, Copy)]
 #[brw(repr(u16))]
 pub enum Command {
@@ -62,13 +67,17 @@ macro_rules! make_status {
         $($name:ident = $value:literal: $description:literal, )+
     ) => {
 
-/// NT Status codes.
+/// NT Status codes for SMB.
+///
+/// For each status code, a U32 constant is also provided for easier access.
+/// for example, [`Status::U32_END_OF_FILE`] is `0xC0000011`, matching [`Status::EndOfFile`].
 #[smb_message_binrw]
 #[derive(Clone, Copy)]
 #[repr(u32)]
 #[brw(repr(u32))]
 pub enum Status {
     $(
+        #[doc = concat!($description, " (", stringify!($value), ")")]
         $name = $value,
     )+
 }
@@ -88,7 +97,7 @@ impl Status {
     // Consts for easier status code as u32 access.
     pastey::paste! {
         $(
-            #[doc = concat!("`", stringify!($name), "` as u32")]
+            #[doc = concat!("[`", stringify!($name), "`][Self::", stringify!($name), "] as u32")]
             pub const [<U32_ $name:snake:upper>]: u32 = $value;
         )+
     }
@@ -166,24 +175,36 @@ make_status! {
     DeviceFeatureNotSupported = 0xC0000463: "Device Feature Not Supported",
 }
 
-/// Sync and Async SMB2 Message header.
+/// SMB2 Packet Header.
+///
+/// Common header structure for all SMB2/SMB3 messages, supporting both
+/// synchronous and asynchronous operations.
+///
+/// Reference: MS-SMB2 2.2.1.1, 2.2.1.2
 #[smb_request_response(size = 64)]
 #[derive(Clone)]
 #[brw(magic(b"\xfeSMB"), little)]
 pub struct Header {
+    /// Number of credits charged for this request.
     pub credit_charge: u16,
-    /// NT status. Use the [`Header::status()`] method to convert to a [`Status`].
+    /// NT status code. Use [`Header::status()`] to convert to [`Status`].
     pub status: u32,
+    /// Command code identifying the request/response type.
     pub command: Command,
+    /// Number of credits requested or granted.
     pub credit_request: u16,
+    /// Header flags indicating message properties.
     pub flags: HeaderFlags,
+    /// Offset to next message in a compounded request chain (0 if not compounded).
     pub next_command: u32,
+    /// Unique message identifier.
     pub message_id: u64,
 
     // Option 1 - Sync: Reserved + TreeId. flags.async_command MUST NOT be set.
     #[brw(if(!flags.async_command()))]
     #[bw(calc = 0)]
     _reserved: u32,
+    /// Tree identifier (synchronous operations only).
     #[br(if(!flags.async_command()))]
     #[bw(assert(tree_id.is_some() != flags.async_command()))]
     pub tree_id: Option<u32>,
@@ -193,7 +214,9 @@ pub struct Header {
     #[bw(assert(tree_id.is_none() == flags.async_command()))]
     pub async_id: Option<u64>,
 
+    /// Unique session identifier.
     pub session_id: u64,
+    /// Message signature for signed messages.
     pub signature: u128,
 }
 
@@ -216,16 +239,28 @@ impl Header {
     }
 }
 
+/// SMB2 header flags.
+///
+/// Indicates how to process the operation.
+///
+/// Reference: MS-SMB2 2.2.1.2
 #[smb_dtyp::mbitfield]
 pub struct HeaderFlags {
+    /// Message is a server response (set in responses).
     pub server_to_redir: bool,
+    /// Message is part of an asynchronous operation.
     pub async_command: bool,
+    /// Request is a related operation in a compounded chain.
     pub related_operations: bool,
+    /// Message is signed.
     pub signed: bool,
+    /// Priority mask for quality of service.
     pub priority_mask: B3,
     #[skip]
     __: B21,
+    /// Request is a DFS operation.
     pub dfs_operation: bool,
+    /// Request is a replay operation for resilient handles.
     pub replay_operation: bool,
     #[skip]
     __: B2,

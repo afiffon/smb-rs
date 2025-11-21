@@ -1,4 +1,4 @@
-//! SMB Message signing implementation.
+//! Message signing implementation.
 
 use binrw::prelude::*;
 use std::io::Cursor;
