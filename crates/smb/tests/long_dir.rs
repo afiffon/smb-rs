@@ -1,5 +1,3 @@
-#![cfg(all(feature = "sign", feature = "encrypt"))]
-
 use serial_test::serial;
 use smb::{ConnectionConfig, Directory, connection::EncryptionMode, sync_helpers::*, tree::Tree};
 use smb_fscc::*;

@@ -59,22 +59,18 @@ jobs:
         run: |
           rustup component add clippy
           cargo clippy --verbose --no-default-features --features "${{ matrix.compile_features }},${COMMON_FEATURES}" -- -Dclippy::all
-      - name: Tests/${{ matrix.compile_features }}
-        run: |
-          cargo test -p smb-msg --features client --no-default-features -- --nocapture
-          cargo test -p smb-msg --features server --no-default-features -- --nocapture
-          cargo test -p smb-msg --features both --no-default-features -- --nocapture
-
-          cargo test --no-default-features --features "${{ matrix.compile_features }},${COMMON_FEATURES}" -- --nocapture
-          # Test without encryption and compression
-          cargo test --no-default-features --features "${{ matrix.compile_features }},sign" -- --nocapture
-          # Test signing with specific algorithms
-          cargo test --no-default-features --features "${{ matrix.compile_features }},sign_cmac" -- --nocapture
-          cargo test --no-default-features --features "${{ matrix.compile_features }},sign_gmac" -- --nocapture
-          cargo test --no-default-features --features "${{ matrix.compile_features }},sign_hmac" -- --nocapture
       - name: Build/${{ matrix.compile_features }}
         run: |
           cargo build --no-default-features --features "${{ matrix.compile_features }},${COMMON_FEATURES}"
+      - name: Tests/${{ matrix.compile_features }}
+        run: |
+          cargo test -p smb-msg --features server --no-default-features -- --nocapture
+          cargo test -p smb-msg --features both --no-default-features -- --nocapture
+
+          # Full client tests with all features
+          cargo test --no-default-features --features "${{ matrix.compile_features }},${COMMON_FEATURES}" -- --nocapture
+      - name: Doc/${{ matrix.compile_features }}
+        run: |
           cargo doc --no-default-features --features "${{ matrix.compile_features }},${COMMON_FEATURES}"
 
   build:

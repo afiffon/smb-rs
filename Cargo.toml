@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/*"]
+members = ["crates/*", "smb-cli"]
 resolver = "2"
 
 [workspace.package]
@@ -16,6 +16,19 @@ readme = "README.md"
 version = "0.10.4"
 
 [workspace.dependencies]
+# Crates in this workspace
+smb = { path = "crates/smb", version = "0.10.4", default-features = false }
+smb-tests = { path = "crates/smb-tests", version = "0.10.4" }
+smb-msg = { path = "crates/smb-msg", version = "0.10.4", default-features = false, features = [
+    "client",
+] }
+smb-msg-derive = { path = "crates/smb-msg-derive", version = "0.10.4" }
+smb-dtyp = { path = "crates/smb-dtyp", version = "0.10.4" }
+smb-dtyp-derive = { path = "crates/smb-dtyp-derive", version = "0.10.4" }
+smb-rpc = { path = "crates/smb-rpc", version = "0.10.4" }
+smb-fscc = { path = "crates/smb-fscc", version = "0.10.4" }
+smb-transport = { path = "crates/smb-transport", version = "0.10.4", default-features = false }
+
 # Binary encoding/decoding
 binrw = "0.15.0"
 modular-bitfield = "0.11.2"

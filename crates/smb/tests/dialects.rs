@@ -1,5 +1,3 @@
-#![cfg(all(feature = "sign", feature = "encrypt"))]
-
 use common::{TestConstants, make_server_connection};
 #[cfg(feature = "async")]
 use futures_util::StreamExt;
@@ -36,7 +34,12 @@ macro_rules! basic_test {
 
 }
 
+// Encryption tests, adapt to current features
+#[cfg(feature = "__encrypt_core")]
 basic_test!([Smb030, Smb0302, Smb0311], [Disabled, Required]);
+#[cfg(not(feature = "__encrypt_core"))]
+basic_test!([Smb030, Smb0302, Smb0311], [Disabled]);
+
 basic_test!([Smb0202, Smb021], [Disabled]);
 
 #[maybe_async::maybe_async]

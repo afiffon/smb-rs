@@ -8,7 +8,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-smb = { path = "../smb", default-features = false, features = ["std-fs-impls"] }
+smb = { workspace = true, features = ["std-fs-impls"] }
 
 maybe-async = { workspace = true }
 tokio = { workspace = true, optional = true, features = ["rt-multi-thread"] }
@@ -29,8 +29,8 @@ async = ["dep:tokio", "dep:futures-util", "dep:futures"]
 single_threaded = ["maybe-async/is_sync"]
 multi_threaded = ["maybe-async/is_sync"]
 
-netbios-transport = ["smb/netbios-transport"]
-quic = ["smb/quic"]
-rdma = ["smb/rdma"]
+netbios-transport = []
+quic = []
+rdma = []
 
 profiling = []

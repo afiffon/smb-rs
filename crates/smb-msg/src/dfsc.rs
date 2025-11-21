@@ -2,7 +2,9 @@
 //!
 //! [MS-DFSC](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-dfsc/)
 
-use binrw::{NullWideString, io::TakeSeekExt, prelude::*};
+#[cfg(feature = "server")]
+use binrw::io::TakeSeekExt;
+use binrw::{NullWideString, prelude::*};
 use modular_bitfield::prelude::*;
 use smb_dtyp::binrw_util::prelude::*;
 use smb_msg_derive::smb_request_binrw;

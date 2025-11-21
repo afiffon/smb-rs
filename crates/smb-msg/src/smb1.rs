@@ -2,6 +2,7 @@
 //!
 //! For multi-protocol negotiation only.
 
+#[cfg(feature = "server")]
 use binrw::io::TakeSeekExt;
 use binrw::prelude::*;
 
