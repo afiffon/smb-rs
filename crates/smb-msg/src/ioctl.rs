@@ -1,4 +1,4 @@
-//! IOCTL requesst and responses implementation, and FSCTLs.
+//! IOCTL requessts and responses implementation, and FSCTLs.
 
 mod common;
 mod fsctl;

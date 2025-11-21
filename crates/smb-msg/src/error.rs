@@ -2,6 +2,8 @@
 
 use binrw::prelude::*;
 
+#[cfg(feature = "client")]
+use binrw::io::TakeSeekExt;
 use smb_dtyp::binrw_util::prelude::*;
 use smb_msg_derive::*;
 
@@ -26,7 +28,8 @@ pub struct ErrorResponse {
 
     /// Variable-length data field that contains extended error information.
     /// For SMB 3.1.1 with nonzero ErrorContextCount, formatted as SMB2 ERROR Context structures.
-    #[br(count = _error_context_count)]
+    #[br(count = _error_context_count, map_stream = |s| s.take_seek(_byte_count.value.into()))]
+    #[bw(write_with = PosMarker::write_size, args(&_byte_count))]
     pub error_data: Vec<ErrorResponseContext>,
 }
 
@@ -108,4 +111,6 @@ mod tests {
     test_response! {
         error_simple, Command::Cancel => Error { error_data: vec![], } => "0900000000000000"
     }
+
+    // TODO(TEST): Add a test with added context items.
 }
