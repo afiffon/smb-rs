@@ -71,7 +71,7 @@ jobs:
           cargo test --no-default-features --features "${{ matrix.compile_features }},${COMMON_FEATURES}" -- --nocapture
       - name: Doc/${{ matrix.compile_features }}
         run: |
-          cargo doc --no-default-features --features "${{ matrix.compile_features }},${COMMON_FEATURES}"
+          cargo doc --no-default-features --features "${{ matrix.compile_features }},${COMMON_FEATURES}" --no-deps
 
   build:
     strategy:
@@ -105,7 +105,7 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     container:
-      image: rust:1.85
+      image: rust:latest
     needs: [test, build]
     environment: production
     if: startsWith(github.ref, 'refs/tags/v')
@@ -122,10 +122,5 @@ jobs:
             exit 1
           fi
       - name: Publish to crates.io
-        # Currently, MSRV does not support the `cargo publish --workspace` command, so putting all packages explicitly is required.
-        # Also, versions are always workspace-defined, so publishing all packages together is required.
         run: |
-          for crate_name in smb-tests smb-dtyp smb-fscc smb-msg smb-transport smb-rpc smb; do
-            echo "Publishing crate: $crate_name"
-            cargo publish -p ${crate_name} --token ${{ secrets.CRATES_IO_TOKEN }}
-          done
+          cargo publish --workspace --token ${{ secrets.CRATES_IO_TOKEN }}
