@@ -71,7 +71,7 @@ field_attribute_list     = { "[" ~ field_attribute ~ ("," ~ field_attribute)* ~ 
 // Union declarator
 union_type                 = { "union" ~ Identifier? ~ union_switch ~ "{" ~ union_body ~ "}" | "union" ~ Identifier? ~ "{" ~ union_body_n_e ~ "}" }
 union_switch               = { "switch" ~ "(" ~ switch_type_spec ~ Identifier ~ ")" ~ union_name? }
-switch_type_spec           = { primitive_integer_type | char_type | Identifier }
+switch_type_spec           = { primitive_integer_type | Identifier }
 union_name                 = { Identifier }
 union_body                 = { union_case+ }
 union_body_n_e             = { union_case_n_e+ }
@@ -99,6 +99,7 @@ array_bound             = { "*" | Integer_literal | Identifier }
 // Type attributes
 type_attribute  = { "transmit_as" ~ "(" ~ xmit_type ~ ")" | "handle" | usage_attribute | union_type_switch_attr | ptr_attr }
 usage_attribute = { "string" | "context_handle" }
+range_attribute = { "range" ~ "(" ~ Integer_literal ~ "," ~ Integer_literal ~ ")" }
 xmit_type       = { simple_type_spec }
 
 // Field attributes
@@ -109,6 +110,7 @@ field_attribute = {
   | "min_is" ~ "(" ~ attr_var_list ~ ")"
   | "max_is" ~ "(" ~ attr_var_list ~ ")"
   | "size_is" ~ "(" ~ attr_var_list ~ ")"
+  | range_attribute
   | usage_attribute
   | union_instance_switch_attr
   | "ignore"
@@ -137,15 +139,12 @@ pointer     = { "*" }
 
 // Types
 base_type_spec         = { base_type ~ pointer_opt }
-base_type              =       { floating_pt_type | integer_type | char_type | byte_type | void_type }
+base_type              =       { floating_pt_type | primitive_integer_type | byte_type | void_type }
 floating_pt_type       = { "float" | "double" }
-integer_type           = { primitive_integer_type | hyper_int }
 primitive_integer_type = { signed_integer | unsigned_integer }
 signed_integer         = { integer_size ~ ("int")? }
-integer_size           = { "long" | "short" | "small" }
-hyper_int              = { "hyper" ~ ("unsigned" ~ "int")? | "unsigned" ~ "hyper" }
+integer_size           = { "long long" | "long" | "short" | "char" }
 unsigned_integer       = { (("unsigned" ~ integer_size) | integer_size ~ "unsigned") ~ ("int")? }
-char_type              = { "char" ~ ("unsigned")? }
 byte_type              = { "byte" }
 void_type              = { "void" }
 
@@ -163,4 +162,4 @@ Import_string   = @{ (ASCII_ALPHA | ASCII_DIGIT | "_" | "-" | "." | "/") }
 
 /* * SPECIAL TOKENS * */
 WHITESPACE = _{ " " | "\r" | "\n" | "\t" }
-COMMENT    = _{ "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
+COMMENT    = _{ "/*" ~ (!"*/" ~ ANY)* ~ "*/" | "//" ~ (!"\n" ~ ANY)* ~ "\n" }
