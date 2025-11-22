@@ -161,11 +161,7 @@ struct NetrShareEnumOut {
     resume_handle: NdrAlign<NdrPtr<u32>, 4>,
 }
 
-impl RpcCall for NetrShareEnumIn {
-    const OPNUM: u16 = 0xf;
-
-    type ResponseType = NetrShareEnumOut;
-}
+impl_rpc_call!(NetrShareEnumIn, 0xf, NetrShareEnumOut);
 
 pub struct SrvSvc<T>
 where

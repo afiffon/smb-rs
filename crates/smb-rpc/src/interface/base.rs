@@ -30,6 +30,17 @@ pub trait RpcCall: for<'a> BinWrite<Args<'a> = ()> {
     }
 }
 
+macro_rules! impl_rpc_call {
+    ($request:ident, $opnum:expr, $response:ty) => {
+        impl RpcCall for $request {
+            const OPNUM: u16 = $opnum;
+            type ResponseType = $response;
+        }
+    };
+}
+
+pub(crate) use impl_rpc_call;
+
 #[maybe_async(AFIT)]
 #[allow(async_fn_in_trait)]
 pub trait BoundRpcConnection {

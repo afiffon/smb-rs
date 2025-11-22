@@ -6,6 +6,7 @@
 pub mod interface;
 pub mod ndr64;
 pub mod pdu;
+pub mod idl;
 
 #[derive(thiserror::Error, Debug)]
 pub enum SmbRpcError {

@@ -21,6 +21,9 @@ pastey = { workspace = true }
 maybe-async = { workspace = true }
 thiserror = { workspace = true }
 
+pest = { workspace = true }
+pest_derive = { workspace = true }
+
 [dev-dependencies]
 smb-tests = { workspace = true }
 

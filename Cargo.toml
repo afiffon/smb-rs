@@ -42,6 +42,9 @@ log = "0.4.22"
 # Tests
 const_format = "0.2"
 
+pest = "2.8"
+pest_derive = "2.8"
+
 # Async
 tokio = { version = "1.43" }
 maybe-async = "0.2"
