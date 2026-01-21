@@ -200,6 +200,17 @@ impl Tree {
         Ok(DfsRootTreeRef::new(self))
     }
 
+    /// Returns a DFS tree reference without checking if the tree is a DFS root.
+    /// 
+    /// This is useful for querying DFS referrals on trees that may not be DFS roots.
+    /// An example of this is when querying IPC$ shares on DFS namespaces. As
+    /// they are not DFS roots, but may still support DFS referrals.
+    ///
+    /// Use with caution, as calling DFS-specific methods on non-DFS trees may lead to errors. 
+    pub fn as_dfs_tree_unchecked(&self) -> DfsRootTreeRef<'_> {
+        DfsRootTreeRef::new(self)
+    }
+
     pub fn as_ipc_tree(&self) -> crate::Result<IpcTreeRef<'_>> {
         let info = self.handler.info()?;
         if info.share_type != ShareType::Pipe {
