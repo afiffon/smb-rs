@@ -1,4 +1,4 @@
-git push --set-upstream origin 161-add-unchecked-dfs-root#!/bin/bash
+#!/bin/bash
 set -euo pipefail
 
 # Soft-RoCE
