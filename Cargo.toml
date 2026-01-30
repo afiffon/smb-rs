@@ -36,7 +36,7 @@ modular-bitfield = "0.11.2"
 # Utilities
 thiserror = "2.0"
 pastey = "0.1.1"
-time = { version = "0.3.37", features = ["macros"] }
+time = { version = "0.3.45", features = ["macros"] }
 rand = "0.8.5"
 log = "0.4.22"
 # Tests
