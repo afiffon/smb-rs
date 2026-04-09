@@ -109,7 +109,7 @@ impl File {
 
         let response = self
             .handle
-            .sendo_recvo(request, ReceiveOptions::new())
+            .sendo_recvo(request, ReceiveOptions::new().with_allow_async(true))
             .await
             .map_err(|e| std::io::Error::other(e.to_string()))?;
         let content = response
