@@ -19,6 +19,10 @@ pub struct Authenticator {
     ssp: Negotiate,
     cred_handle: AcquireCredentialsHandleResult<Option<CredentialsBuffers>>,
     current_state: Option<InitializeSecurityContextResult>,
+    /// Tracks whether the first SSPI token has been sent.  The first
+    /// outgoing token must be wrapped in SPNEGO `NegTokenInit`; all
+    /// subsequent tokens use `NegTokenResp`.
+    first_token_sent: bool,
 }
 
 impl Authenticator {
@@ -51,6 +55,7 @@ impl Authenticator {
             cred_handle,
             current_state: None,
             user_name,
+            first_token_sent: false,
         })
     }
 
@@ -104,6 +109,14 @@ impl Authenticator {
             ));
         }
 
+        // Unwrap incoming SPNEGO to obtain the raw mechanism token that
+        // sspi-rs expects (it only speaks raw NTLM, not SPNEGO).
+        let sspi_input = if gss_token.is_empty() {
+            gss_token.to_owned()
+        } else {
+            super::spnego::unwrap_response(gss_token)?
+        };
+
         let mut output_buffer = vec![SecurityBuffer::new(Vec::new(), BufferType::Token)];
         let target_name = Self::make_sspi_target_name(&self.server_hostname);
         let mut builder = self
@@ -120,7 +133,7 @@ impl Authenticator {
         builder = builder.with_target_name(&target_name);
 
         let mut input_buffers = vec![];
-        input_buffers.push(SecurityBuffer::new(gss_token.to_owned(), BufferType::Token));
+        input_buffers.push(SecurityBuffer::new(sspi_input, BufferType::Token));
         builder = builder.with_input(&mut input_buffers);
 
         let result = {
@@ -154,12 +167,24 @@ impl Authenticator {
 
         self.current_state = Some(result);
 
-        let output_buffer = output_buffer
+        let raw_token = output_buffer
             .pop()
             .ok_or_else(|| Error::InvalidState("SSPI output buffer is empty.".to_string()))?
             .buffer;
 
-        Ok(output_buffer)
+        // Wrap the raw NTLM token in SPNEGO so that Windows SMB2 servers
+        // accept it (MS-SMB2 §3.2.4.2.3 mandates GSSAPI/SPNEGO blobs).
+        if super::spnego::is_raw_ntlm(&raw_token) {
+            if !self.first_token_sent {
+                self.first_token_sent = true;
+                Ok(super::spnego::wrap_init(&raw_token))
+            } else {
+                Ok(super::spnego::wrap_response(&raw_token))
+            }
+        } else {
+            // Token is already SPNEGO (e.g. Kerberos path); pass through.
+            Ok(raw_token)
+        }
     }
 
     /// This method, despite being very similar to [`sspi::generator::Generator::resolve_with_async_client`],

@@ -29,6 +29,7 @@ mod channel;
 mod encryptor_decryptor;
 mod setup;
 mod signer;
+mod spnego;
 #[cfg(feature = "kerberos")]
 mod sspi_network_client;
 mod state;
