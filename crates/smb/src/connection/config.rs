@@ -166,29 +166,30 @@ impl ConnectionConfig {
     /// Validates common configuration settings.
     pub fn validate(&self) -> crate::Result<()> {
         // Make sure dialects min <= max.
-        if let (Some(min), Some(max)) = (self.min_dialect, self.max_dialect) {
-            if min > max {
-                return Err(crate::Error::InvalidConfiguration(
-                    "Minimum dialect is greater than maximum dialect".to_string(),
-                ));
-            }
+        if let (Some(min), Some(max)) = (self.min_dialect, self.max_dialect)
+            && min > max
+        {
+            return Err(crate::Error::InvalidConfiguration(
+                "Minimum dialect is greater than maximum dialect".to_string(),
+            ));
         }
         // Make sure transport is supported by the dialects.
         #[cfg(feature = "quic")]
-        if let Some(min) = self.min_dialect {
-            if min < Dialect::Smb0311 && matches!(self.transport, TransportConfig::Quic(_)) {
-                return Err(crate::Error::InvalidConfiguration(
-                    "SMB over QUIC is not supported by the selected dialect".to_string(),
-                ));
-            }
+        if let Some(min) = self.min_dialect
+            && min < Dialect::Smb0311
+            && matches!(self.transport, TransportConfig::Quic(_))
+        {
+            return Err(crate::Error::InvalidConfiguration(
+                "SMB over QUIC is not supported by the selected dialect".to_string(),
+            ));
         }
 
-        if let Some(default_transaction_size) = self.default_transaction_size {
-            if default_transaction_size == 0 {
-                return Err(crate::Error::InvalidConfiguration(
-                    "Default transaction size cannot be zero".to_string(),
-                ));
-            }
+        if let Some(default_transaction_size) = self.default_transaction_size
+            && default_transaction_size == 0
+        {
+            return Err(crate::Error::InvalidConfiguration(
+                "Default transaction size cannot be zero".to_string(),
+            ));
         }
         Ok(())
     }

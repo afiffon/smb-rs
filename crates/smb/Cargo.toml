@@ -42,7 +42,7 @@ url = "2.5.0"
 byteorder = { version = "1.5.0", optional = true }
 
 # APIs
-sspi = { version = "0.18.0", features = ["ring"], default-features = false }
+sspi = { version = "=0.18.7", features = ["ring"], default-features = false }
 reqwest = { workspace = true, optional = true }
 
 # Crypto; RustCrypto provides support for RC versions only.

@@ -927,10 +927,10 @@ impl Drop for ResourceHandle {
         let handler = self.handler.clone();
         log::debug!("Spawning task to close file with ID: {file_id:?}");
         tokio::task::spawn(async move {
-            if file_id != FileId::EMPTY {
-                if let Err(e) = Self::send_close(file_id, &handler).await {
-                    log::error!("Error closing file: {e}");
-                }
+            if file_id != FileId::EMPTY
+                && let Err(e) = Self::send_close(file_id, &handler).await
+            {
+                log::error!("Error closing file: {e}");
             }
         });
     }

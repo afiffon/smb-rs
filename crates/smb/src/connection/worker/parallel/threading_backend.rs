@@ -30,10 +30,10 @@ impl ThreadingBackend {
         while !self.is_cancelled() {
             let next = rtransport.receive();
             // Handle polling fail
-            if let Err(TransportError::IoError(ref e)) = next {
-                if e.kind() == std::io::ErrorKind::WouldBlock {
-                    continue;
-                }
+            if let Err(TransportError::IoError(ref e)) = next
+                && e.kind() == std::io::ErrorKind::WouldBlock
+            {
+                continue;
             }
             match self.worker.incoming_data_callback(next) {
                 Ok(_) => {}

@@ -156,12 +156,12 @@ impl CompressionMethod for ChainedCompression {
                     "Decompressed size exceeds the expected size".to_string(),
                 ))?;
             }
-            if let Some(original_size) = item.original_size {
-                if len_after - len_before != original_size as usize {
-                    Err(CompressionError::ChainedCompressionFailed(
-                        "Decompressed size does not match the item expected size".to_string(),
-                    ))?;
-                }
+            if let Some(original_size) = item.original_size
+                && len_after - len_before != original_size as usize
+            {
+                Err(CompressionError::ChainedCompressionFailed(
+                    "Decompressed size does not match the item expected size".to_string(),
+                ))?;
             }
         }
 

@@ -196,12 +196,12 @@ impl DialectMethods for Smb311 {
 
         // Make sure preauth integrity capability is SHA-512, if it exists in response:
         let ctx_integrity = response.get_ctx_preauth_integrity_capabilities();
-        if let Some(algo) = ctx_integrity.and_then(|ctx| ctx.hash_algorithms.first()) {
-            if !preauth_hash::SUPPORTED_ALGOS.contains(algo) {
-                return Err(Error::NegotiationError(
-                    "Unsupported preauth integrity algorithm received".into(),
-                ));
-            }
+        if let Some(algo) = ctx_integrity.and_then(|ctx| ctx.hash_algorithms.first())
+            && !preauth_hash::SUPPORTED_ALGOS.contains(algo)
+        {
+            return Err(Error::NegotiationError(
+                "Unsupported preauth integrity algorithm received".into(),
+            ));
         }
 
         // And verify that the encryption algorithm is supported.

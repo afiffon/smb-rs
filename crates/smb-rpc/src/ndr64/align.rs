@@ -7,7 +7,7 @@ pub const NDR64_ALIGNMENT: usize = 8;
 pub fn debug_assert_aligned<W: std::io::Seek>(stream: &mut W) -> binrw::BinResult<()> {
     let pos = stream.stream_position()?;
     debug_assert!(
-        pos as usize % NDR64_ALIGNMENT == 0,
+        (pos as usize).is_multiple_of(NDR64_ALIGNMENT),
         "Writer is not aligned to NDR64"
     );
     Ok(())
