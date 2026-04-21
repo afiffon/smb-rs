@@ -17,6 +17,10 @@ pub enum PreauthHashState {
 }
 
 impl PreauthHashState {
+    pub fn is_in_progress(&self) -> bool {
+        matches!(self, PreauthHashState::InProgress(_))
+    }
+
     pub fn begin() -> PreauthHashState {
         PreauthHashState::InProgress([0; 64])
     }

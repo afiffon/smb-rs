@@ -48,6 +48,7 @@ reqwest = { workspace = true, optional = true }
 # Crypto; RustCrypto provides support for RC versions only.
 hmac = "0.13.0-rc.2"
 sha2 = "0.11.0-rc.2"
+md-5 = "0.11.0-rc.2"
 kbkdf = { version = "0.1.0-pre.0" }
 crypto-common = { version = "0.2.0-rc.4" }
 aes = "0.9.0-rc.1"

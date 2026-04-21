@@ -2590,6 +2590,7 @@ dependencies = [
  "log",
  "lz4_flex",
  "maybe-async",
+ "md-5",
  "modular-bitfield",
  "pastey",
  "rand 0.8.5",

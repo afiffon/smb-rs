@@ -368,33 +368,50 @@ impl Connection {
         let has_signing = !signing_algorithms.is_empty();
         let has_encryption = !encrypting_algorithms.is_empty();
 
-        // Context list supported on SMB3.1.1+
+        // Negotiate context list for SMB 3.1.1 (MS-SMB2 2.2.3.1).
+        // Contexts are ordered by ascending ContextType value as recommended by the spec.
         let ctx_list = if supported_dialects.contains(&Dialect::Smb0311) {
             let mut preauth_integrity_hash = [0u8; 32];
             OsRng.fill_bytes(&mut preauth_integrity_hash);
-            let mut ctx_list = vec![
-                PreauthIntegrityCapabilities {
-                    hash_algorithms: vec![HashAlgorithm::Sha512],
-                    salt: preauth_integrity_hash.to_vec(),
-                }
-                .into(),
-                NetnameNegotiateContextId {
-                    netname: client_netname.into(),
-                }
-                .into(),
-                EncryptionCapabilities {
-                    ciphers: encrypting_algorithms,
-                }
-                .into(),
+
+            // 0x0001 - SMB2_PREAUTH_INTEGRITY_CAPABILITIES (mandatory for 3.1.1)
+            let mut ctx_list = vec![PreauthIntegrityCapabilities {
+                hash_algorithms: vec![HashAlgorithm::Sha512],
+                salt: preauth_integrity_hash.to_vec(),
+            }
+            .into()];
+
+            // 0x0002 - SMB2_ENCRYPTION_CAPABILITIES
+            // MS-SMB2: CipherCount MUST be greater than zero, so only include this
+            // context when there are actual ciphers to offer.
+            if !encrypting_algorithms.is_empty() {
+                ctx_list.push(
+                    EncryptionCapabilities {
+                        ciphers: encrypting_algorithms,
+                    }
+                    .into(),
+                );
+            }
+
+            // 0x0003 - SMB2_COMPRESSION_CAPABILITIES
+            ctx_list.push(
                 CompressionCapabilities {
                     flags: CompressionCapsFlags::new()
                         .with_chained(!compression_algorithms.is_empty()),
                     compression_algorithms,
                 }
                 .into(),
-                SigningCapabilities { signing_algorithms }.into(),
-            ];
-            // QUIC
+            );
+
+            // 0x0005 - SMB2_NETNAME_NEGOTIATE_CONTEXT_ID
+            ctx_list.push(
+                NetnameNegotiateContextId {
+                    netname: client_netname.into(),
+                }
+                .into(),
+            );
+
+            // 0x0006 - SMB2_TRANSPORT_CAPABILITIES (QUIC only)
             #[cfg(feature = "quic")]
             if matches!(self.config.transport, TransportConfig::Quic(_)) {
                 ctx_list.push(NegotiateContext {
@@ -404,7 +421,8 @@ impl Connection {
                     ),
                 });
             }
-            // TODO: Add to config
+
+            // 0x0007 - SMB2_RDMA_TRANSFORM_CAPABILITIES
             if cfg!(feature = "rdma") {
                 ctx_list.push(NegotiateContext {
                     context_type: NegotiateContextType::RdmaTransformCapabilities,
@@ -415,6 +433,12 @@ impl Connection {
                     ),
                 });
             }
+
+            // 0x0008 - SMB2_SIGNING_CAPABILITIES
+            if !signing_algorithms.is_empty() {
+                ctx_list.push(SigningCapabilities { signing_algorithms }.into());
+            }
+
             Some(ctx_list)
         } else {
             None

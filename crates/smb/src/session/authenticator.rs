@@ -1,24 +1,71 @@
 use std::sync::Arc;
 
 use crate::Error;
-use crate::connection::AuthMethodsConfig;
 use crate::connection::connection_info::ConnectionInfo;
 use maybe_async::*;
 use sspi::{
-    AcquireCredentialsHandleResult, AuthIdentity, BufferType, ClientRequestFlags, CredentialUse,
-    DataRepresentation, InitializeSecurityContextResult, Negotiate, SecurityBuffer, Sspi,
-    ntlm::NtlmConfig,
+    AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers, BufferType,
+    ClientRequestFlags, CredentialUse, DataRepresentation, InitializeSecurityContextResult,
+    SecurityBuffer, Sspi, SspiImpl,
+    ntlm::{Ntlm, NtlmConfig},
 };
-use sspi::{CredentialsBuffers, NegotiateConfig, SspiImpl, Username};
+use sspi::Username;
 
+fn rc4_crypt(key: &[u8], data: &[u8]) -> Vec<u8> {
+    let mut s: Vec<u8> = (0..=255).collect();
+    let mut j: usize = 0;
+    for i in 0..256 {
+        j = (j + s[i] as usize + key[i % key.len()] as usize) & 0xff;
+        s.swap(i, j);
+    }
+    let mut i: usize = 0;
+    j = 0;
+    data.iter()
+        .map(|&b| {
+            i = (i + 1) & 0xff;
+            j = (j + s[i] as usize) & 0xff;
+            s.swap(i, j);
+            b ^ s[(s[i] as usize + s[j] as usize) & 0xff]
+        })
+        .collect()
+}
+
+/// Extract the NegotiateFlags field from a raw NTLM AUTHENTICATE_MESSAGE (Type-3).
+///
+/// Layout per [MS-NLMP] 2.2.1.3:
+///   Signature(8) + MessageType(4) + LmChallengeResponseFields(8) +
+///   NtChallengeResponseFields(8) + DomainNameFields(8) + UserNameFields(8) +
+///   WorkstationFields(8) + EncryptedRandomSessionKeyFields(8) = 60 bytes
+/// followed by 4 bytes of NegotiateFlags (little-endian).
+fn extract_ntlm_type3_negotiate_flags(ntlm_msg: &[u8]) -> Option<u32> {
+    if ntlm_msg.len() < 64 {
+        return None;
+    }
+    if &ntlm_msg[..8] != b"NTLMSSP\0" {
+        return None;
+    }
+    if u32::from_le_bytes(ntlm_msg[8..12].try_into().ok()?) != 3 {
+        return None;
+    }
+    Some(u32::from_le_bytes(ntlm_msg[60..64].try_into().ok()?))
+}
+
+/// SMB session authenticator using NTLM SSP directly.
+///
+/// Previous versions used sspi-rs's `Negotiate` SSP, which wraps NTLM in
+/// an additional GSS-API / NegoEx framing layer that Windows 10's SMB server
+/// rejects with `STATUS_INVALID_PARAMETER`.  By driving the `Ntlm` SSP
+/// directly we get clean NTLM tokens that our `spnego` module wraps in the
+/// standard SPNEGO envelope expected by SMB2.
 #[derive(Debug)]
 pub struct Authenticator {
     server_hostname: String,
     user_name: Username,
 
-    ssp: Negotiate,
-    cred_handle: AcquireCredentialsHandleResult<Option<CredentialsBuffers>>,
+    ssp: Ntlm,
+    cred_handle: AcquireCredentialsHandleResult<Option<AuthIdentityBuffers>>,
     current_state: Option<InitializeSecurityContextResult>,
+    first_token_sent: bool,
 }
 
 impl Authenticator {
@@ -26,31 +73,44 @@ impl Authenticator {
         identity: AuthIdentity,
         conn_info: &Arc<ConnectionInfo>,
     ) -> crate::Result<Authenticator> {
-        let client_computer_name = conn_info
-            .config
-            .client_name
-            .as_ref()
-            .unwrap_or(&String::from("smb-rs"))
-            .clone();
-        let mut negotiate_ssp = Negotiate::new_client(NegotiateConfig::new(
-            Box::new(NtlmConfig::default()),
-            Some(Self::get_available_ssp_pkgs(&conn_info.config.auth_methods)),
-            client_computer_name,
-        ))?;
+        // This authenticator drives the NTLM SSP directly (see module docs).
+        // It does not implement Kerberos — the previous `Negotiate` SSP path
+        // that used to cover Kerberos produced NegoEx framing Windows SMB
+        // servers reject, so it was removed.  To avoid silently downgrading a
+        // user who explicitly asked for Kerberos, fail fast here when the
+        // connection config requests it.
+        let auth_methods = &conn_info.config.auth_methods;
+        if auth_methods.kerberos && !auth_methods.ntlm {
+            return Err(Error::UnsupportedAuthenticationMechanism(
+                "Kerberos-only authentication is not supported by this build; \
+                 enable NTLM (auth_methods.ntlm = true) or use a build with \
+                 Kerberos support".into(),
+            ));
+        }
+        if auth_methods.kerberos {
+            log::warn!(
+                "AuthMethodsConfig.kerberos = true but this build only \
+                 implements NTLM; falling back to NTLM. Set kerberos = false \
+                 to silence this warning."
+            );
+        }
+
+        let mut ntlm_ssp = Ntlm::with_config(NtlmConfig::default());
         let user_name = identity.username.clone();
 
-        let cred_handle = negotiate_ssp
+        let cred_handle = ntlm_ssp
             .acquire_credentials_handle()
             .with_credential_use(CredentialUse::Outbound)
-            .with_auth_data(&sspi::Credentials::AuthIdentity(identity.clone()))
-            .execute(&mut negotiate_ssp)?;
+            .with_auth_data(&identity)
+            .execute(&mut ntlm_ssp)?;
 
         Ok(Authenticator {
             server_hostname: conn_info.server_name.clone(),
-            ssp: negotiate_ssp,
+            ssp: ntlm_ssp,
             cred_handle,
             current_state: None,
             user_name,
+            first_token_sent: false,
         })
     }
 
@@ -66,21 +126,102 @@ impl Authenticator {
     }
 
     pub fn session_key(&self) -> crate::Result<[u8; 16]> {
-        // Use the first 16 bytes of the session key.
         let key_info = self.ssp.query_context_session_key()?;
         let k = &key_info.session_key.as_ref()[..16];
         Ok(k.try_into().unwrap())
     }
 
-    fn make_sspi_target_name(server_fqdn: &str) -> String {
-        format!("cifs/{server_fqdn}")
+    /// Compute the SPNEGO mechListMIC manually.
+    ///
+    /// Implements the MIC computation described in [MS-SPNG] §3.1.5.1 +
+    /// [MS-NLMP] §3.4.4.1:
+    ///   1. Derive ClientSigningKey and ClientSealingKey from ExportedSessionKey.
+    ///   2. Digest = HMAC-MD5(ClientSigningKey, seq_num_le || mechTypeList).
+    ///   3. If NTLMSSP_NEGOTIATE_KEY_EXCH was negotiated:
+    ///         Checksum = RC4(ClientSealingKey, Digest[0:8])
+    ///      Otherwise:
+    ///         Checksum = Digest[0:8]  (NTLMv2 + ESS without key exchange).
+    ///   4. MIC = version(1u32_le) || Checksum || seq_num_le.
+    ///
+    /// `ntlm_negotiate_flags` MUST be the NegotiateFlags value actually sent on
+    /// the wire in the AUTHENTICATE_MESSAGE (Type-3); otherwise server-side
+    /// verification will fail.
+    pub fn compute_mech_list_mic(
+        &mut self,
+        mech_list: &[u8],
+        ntlm_negotiate_flags: u32,
+    ) -> crate::Result<Vec<u8>> {
+        use hmac::{Hmac, KeyInit, Mac};
+        use md5::Md5;
+
+        /// [MS-NLMP] 2.2.2.5 : NTLMSSP_NEGOTIATE_KEY_EXCH
+        const NTLMSSP_NEGOTIATE_KEY_EXCH: u32 = 0x4000_0000;
+
+        let session_key = self.session_key()?;
+
+        // Derive ClientSigningKey = MD5(ExportedSessionKey || CLIENT_SIGN_MAGIC)
+        let client_sign_magic = b"session key to client-to-server signing key magic constant\x00";
+        let signing_key: [u8; 16] = {
+            let mut hasher = <Md5 as md5::Digest>::new();
+            md5::Digest::update(&mut hasher, &session_key);
+            md5::Digest::update(&mut hasher, client_sign_magic.as_slice());
+            md5::Digest::finalize(hasher).into()
+        };
+
+        // Derive ClientSealingKey = MD5(ExportedSessionKey || CLIENT_SEAL_MAGIC)
+        let client_seal_magic = b"session key to client-to-server sealing key magic constant\x00";
+        let sealing_key: [u8; 16] = {
+            let mut hasher = <Md5 as md5::Digest>::new();
+            md5::Digest::update(&mut hasher, &session_key);
+            md5::Digest::update(&mut hasher, client_seal_magic.as_slice());
+            md5::Digest::finalize(hasher).into()
+        };
+
+        if cfg!(feature = "__debug-dump-keys") {
+            log::debug!(
+                "MIC keys: signing={:02x?}, sealing={:02x?}",
+                signing_key,
+                sealing_key
+            );
+        }
+
+        // Digest = HMAC-MD5(ClientSigningKey, seq_num(0) || mechTypeList)
+        let seq_num: u32 = 0;
+        let mut mac =
+            Hmac::<Md5>::new_from_slice(&signing_key).expect("HMAC-MD5 key length is valid");
+        mac.update(&seq_num.to_le_bytes());
+        mac.update(mech_list);
+        let digest: [u8; 16] = mac.finalize().into_bytes().into();
+
+        // Checksum = RC4(ClientSealingKey, Digest[0:8]) iff KEY_EXCH was negotiated;
+        // otherwise the checksum is just digest[0..8].
+        let key_exch_enabled = ntlm_negotiate_flags & NTLMSSP_NEGOTIATE_KEY_EXCH != 0;
+        let checksum: Vec<u8> = if key_exch_enabled {
+            rc4_crypt(&sealing_key, &digest[..8])
+        } else {
+            digest[..8].to_vec()
+        };
+
+        // MIC = version(1) || checksum || seq_num
+        let mut mic = Vec::with_capacity(16);
+        mic.extend_from_slice(&1u32.to_le_bytes()); // version
+        mic.extend_from_slice(&checksum); // 8 bytes
+        mic.extend_from_slice(&seq_num.to_le_bytes()); // seq_num
+        assert_eq!(mic.len(), 16);
+
+        log::trace!(
+            "mechListMIC: key_exch={}, mic={:02x?}",
+            key_exch_enabled,
+            &mic
+        );
+
+        Ok(mic)
     }
 
     fn get_context_requirements() -> ClientRequestFlags {
-        ClientRequestFlags::DELEGATE
-            | ClientRequestFlags::MUTUAL_AUTH
-            | ClientRequestFlags::INTEGRITY
-            | ClientRequestFlags::FRAGMENT_TO_FIT
+        ClientRequestFlags::INTEGRITY
+            | ClientRequestFlags::REPLAY_DETECT
+            | ClientRequestFlags::SEQUENCE_DETECT
             | ClientRequestFlags::USE_SESSION_KEY
     }
 
@@ -100,8 +241,14 @@ impl Authenticator {
             ));
         }
 
+        // Ntlm SSP only accepts raw NTLM tokens, so unwrap the SPNEGO envelope first.
+        let sspi_input = if gss_token.is_empty() {
+            gss_token.to_owned()
+        } else {
+            super::spnego::unwrap_response(gss_token)?
+        };
+
         let mut output_buffer = vec![SecurityBuffer::new(Vec::new(), BufferType::Token)];
-        let target_name = Self::make_sspi_target_name(&self.server_hostname);
         let mut builder = self
             .ssp
             .initialize_security_context()
@@ -110,84 +257,66 @@ impl Authenticator {
             .with_target_data_representation(Self::SSPI_REQ_DATA_REPRESENTATION)
             .with_output(&mut output_buffer);
 
-        if cfg!(feature = "kerberos") {
-            builder = builder.with_target_name(&target_name)
-        }
+        let target_name = format!("cifs/{}", self.server_hostname);
+        builder = builder.with_target_name(&target_name);
 
         let mut input_buffers = vec![];
-        input_buffers.push(SecurityBuffer::new(gss_token.to_owned(), BufferType::Token));
+        input_buffers.push(SecurityBuffer::new(sspi_input, BufferType::Token));
         builder = builder.with_input(&mut input_buffers);
 
         let result = {
             let mut generator = self.ssp.initialize_security_context_impl(&mut builder)?;
-            // Kerberos requires a network client to be set up.
-            // We avoid compiling with the network client if kerberos is not enabled,
-            // so be sure to avoid using it in that case.
-            // while default, sync network client is supported in sspi,
-            // an implementation of the async one had to be added in this module.
-            #[cfg(feature = "kerberos")]
-            {
-                use super::sspi_network_client::ReqwestNetworkClient;
-                #[cfg(feature = "async")]
-                {
-                    Self::_resolve_with_async_client(
-                        &mut generator,
-                        &mut ReqwestNetworkClient::new(),
-                    )
-                    .await?
-                }
-                #[cfg(not(feature = "async"))]
-                {
-                    generator.resolve_with_client(&ReqwestNetworkClient {})?
-                }
-            }
-            #[cfg(not(feature = "kerberos"))]
-            {
-                generator.resolve_to_result()?
-            }
+            generator.resolve_to_result()?
         };
 
         self.current_state = Some(result);
 
-        let output_buffer = output_buffer
+        let raw_token = output_buffer
             .pop()
             .ok_or_else(|| Error::InvalidState("SSPI output buffer is empty.".to_string()))?
             .buffer;
 
-        Ok(output_buffer)
-    }
+        log::trace!(
+            "NTLM SSP output: {} bytes, starts_with_ntlmssp={}",
+            raw_token.len(),
+            super::spnego::is_raw_ntlm(&raw_token)
+        );
 
-    /// This method, despite being very similar to [`sspi::generator::Generator::resolve_with_async_client`],
-    /// adds the `Send` bound to the network client, which is required for our async code.
-    ///
-    /// See [<https://github.com/Devolutions/sspi-rs/issues/526>] for more details.
-    #[cfg(all(feature = "kerberos", feature = "async"))]
-    async fn _resolve_with_async_client(
-        generator: &mut sspi::generator::GeneratorInitSecurityContext<'_>, // Generator returned from `sspi-rs`.
-        network_client: &mut super::sspi_network_client::ReqwestNetworkClient, // Your custom network client.
-    ) -> sspi::Result<InitializeSecurityContextResult> {
-        let mut state = generator.start();
-
-        use sspi::generator::GeneratorState::*;
-        loop {
-            match state {
-                Suspended(ref request) => {
-                    state = generator.resume(network_client.send(request).await);
-                }
-                Completed(client_state) => {
-                    return client_state;
-                }
-            }
-        }
-    }
-
-    fn get_available_ssp_pkgs(config: &AuthMethodsConfig) -> String {
-        let krb_pku2u_config = if cfg!(feature = "kerberos") && config.kerberos {
-            "kerberos,!pku2u"
+        // Ntlm SSP emits raw NTLM tokens; we wrap them into SPNEGO manually.
+        if !self.first_token_sent {
+            self.first_token_sent = true;
+            let wrapped = super::spnego::wrap_init(&raw_token);
+            log::trace!(
+                "SPNEGO: NTLM Type-1 ({} bytes) -> NegTokenInit ({} bytes)",
+                raw_token.len(),
+                wrapped.len()
+            );
+            Ok(wrapped)
+        } else if self.is_authenticated()? {
+            // NTLM exchange is complete; include a mechListMIC in the Type-3
+            // NegTokenResp. The MIC algorithm depends on the NegotiateFlags
+            // actually sent on the wire in Type-3 (notably the KEY_EXCH bit),
+            // so we parse the real flags from raw_token instead of assuming.
+            let ntlm_flags = extract_ntlm_type3_negotiate_flags(&raw_token).ok_or_else(|| {
+                Error::InvalidState("Failed to parse NegotiateFlags from NTLM Type-3".into())
+            })?;
+            log::trace!("NTLM Type-3 NegotiateFlags: 0x{:08x}", ntlm_flags);
+            let mic = self.compute_mech_list_mic(super::spnego::MECH_TYPE_LIST_BYTES, ntlm_flags)?;
+            let wrapped = super::spnego::wrap_response_with_mic(&raw_token, &mic);
+            log::trace!(
+                "SPNEGO: NTLM Type-3 ({} bytes) + MIC -> NegTokenResp ({} bytes)",
+                raw_token.len(),
+                wrapped.len()
+            );
+            Ok(wrapped)
         } else {
-            "!kerberos,!pku2u"
-        };
-        let ntlm_config = if config.ntlm { "ntlm" } else { "!ntlm" };
-        format!("{ntlm_config},{krb_pku2u_config}")
+            let wrapped = super::spnego::wrap_response(&raw_token);
+            log::trace!(
+                "SPNEGO: NTLM Type-3 ({} bytes) -> NegTokenResp ({} bytes)",
+                raw_token.len(),
+                wrapped.len()
+            );
+            Ok(wrapped)
+        }
     }
 }

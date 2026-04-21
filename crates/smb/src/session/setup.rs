@@ -117,56 +117,124 @@ where
     ///
     /// This function loops until the authentication is complete, requesting GSS tokens
     /// and passing them to the server.
+    ///
+    /// Preauth hash policy (MS-SMB2 §3.2.5.3 / §3.2.4.2.3):
+    ///   - Each outgoing request is chained into the hash.
+    ///   - Each intermediate response (MORE_PROCESSING_REQUIRED) is chained.
+    ///   - The final SUCCESS response is NOT included.
+    ///   - `make_channel()` (key derivation) runs once the authentication is
+    ///     complete and the preauth hash is finalized.
     async fn _setup_loop(&mut self) -> crate::Result<()> {
-        // While there's a response to process, do so.
-        while !self.authenticator.is_authenticated()? {
+        let mut server_needs_more = true;
+        const MAX_ROUNDS: usize = 8;
+        let mut round = 0;
+
+        while server_needs_more {
+            round += 1;
+            if round > MAX_ROUNDS {
+                return Err(Error::InvalidState(
+                    "Too many session setup rounds".to_string(),
+                ));
+            }
+
             let next_buf = match self.last_setup_response.as_ref() {
                 Some(response) => self.authenticator.next(&response.buffer).await?,
                 None => self.authenticator.next(&[]).await?,
             };
             let is_auth_done = self.authenticator.is_authenticated()?;
 
-            // If keys are exchanged, set them up, to enable validation of next response!
             let request = self.send_setup_request(next_buf).await?;
-            if is_auth_done {
+
+            // MS-SMB2 §3.2.5.3 : the signing key is derived from SessionKey and the
+            // preauth hash covering every message up to and including the final
+            // client request, and excludes the final SUCCESS response.
+            //
+            // If NTLM is done on this round (i.e. we just sent Type-3+MIC) the server
+            // will answer with a signed SUCCESS.  The transformer verifies signatures
+            // against the session's channel, so the channel (signing keys) MUST be
+            // derived BEFORE we try to receive that response - otherwise the
+            // transformer rejects the message with "Message is required to be signed,
+            // but no channel is set up!".
+            //
+            // We can do this safely here because the preauth hash already reflects
+            // every message up to the just-sent Type-3 request, which is exactly the
+            // input MS-SMB2 mandates.  `self.result` exists only after the first round
+            // has learned the session_id from Type-2, so gating on it keeps round 1
+            // untouched.
+            let channel_already_built = match self.result.as_ref() {
+                Some(s) => s.read().await?.channel.is_some(),
+                None => false,
+            };
+            if is_auth_done && self.result.is_some() && !channel_already_built {
                 self.preauth_hash = self.preauth_hash.take().unwrap().finish().into();
                 self.make_channel().await?;
             }
 
             let response = self.receive_setup_response(request.msg_id).await?;
+            let response_status = response.message.header.status().ok();
             let message_form = response.form;
             let session_id = response.message.header.session_id;
             let session_setup_response = response.message.content.to_sessionsetup()?;
 
-            // First iteration: construct a session state object.
-            // TODO: currently, there's a bug which prevents authentication on first attempt
-            // to complete successfully: since we need the session ID to construct the session state,
-            // which is required for channel construction and signature validation,
-            // the first request must arrive here, and then be validated.
             if self.result.is_none() {
                 log::trace!("Creating session state with id {session_id}.");
                 self.set_session(T::init_session(self, session_id).await?)
                     .await?;
             }
 
+            server_needs_more = response_status == Some(Status::MoreProcessingRequired);
+
             if is_auth_done {
-                // Important: If we did NOT make sure the message's signature is valid,
-                // we should do it now, as long as the session is not anonymous or guest.
-                if !session_setup_response
-                    .session_flags
-                    .is_guest_or_null_session()
+                if server_needs_more {
+                    // Server returned MORE_PROCESSING_REQUIRED even though NTLM
+                    // authentication is already complete on our side.  This
+                    // typically means the SPNEGO `mechListMIC` we embedded in
+                    // Type-3 was missing or incorrect, so the server is asking
+                    // for another round our state machine cannot produce.
+                    //
+                    // Per MS-SMB2 §3.2.5.3, accepting this response as "final"
+                    // would leave the client using a session the server has
+                    // not actually acknowledged as complete.  Rather than
+                    // silently continuing with a half-negotiated session, fail
+                    // fast so the caller can diagnose and fix the underlying
+                    // mechListMIC or SPNEGO flow.
+                    return Err(Error::InvalidState(format!(
+                        "NTLM auth completed locally but server still returned \
+                         STATUS_MORE_PROCESSING_REQUIRED; refusing to finalize \
+                         a session the server has not accepted \
+                         (likely a bad Type-3 mechListMIC). round={round}"
+                    )));
+                }
+
+                // preauth_hash has already been finalized right after
+                // send_setup_request, and make_channel() was invoked before
+                // receive; this block only performs final validation.
+                if self.preauth_hash.as_ref().unwrap().is_in_progress() {
+                    // Defensive fallback: if the early-finalize branch above did
+                    // not fire (e.g. on a legacy code path), finalize here.
+                    self.preauth_hash = self.preauth_hash.take().unwrap().finish().into();
+                    self.make_channel().await?;
+                }
+
+                if !server_needs_more
+                    && !session_setup_response
+                        .session_flags
+                        .is_guest_or_null_session()
                     && !message_form.signed_or_encrypted()
                 {
                     return Err(Error::InvalidMessage(
                         "Expected a signed message!".to_string(),
                     ));
                 }
+
+                server_needs_more = false;
             } else {
+                // Intermediate response: chain into preauth hash and continue.
                 self.next_preauth_hash(&response.raw);
             }
 
             self.flags = Some(session_setup_response.session_flags);
-            self.last_setup_response = Some(session_setup_response)
+            self.last_setup_response = Some(session_setup_response);
         }
 
         self.flags.ok_or(Error::InvalidState(
@@ -202,8 +270,12 @@ where
     async fn receive_setup_response(&mut self, for_msg_id: u64) -> crate::Result<IncomingMessage> {
         let is_auth_done = self.authenticator.is_authenticated()?;
 
-        let expected_status = if is_auth_done {
-            &[Status::Success]
+        // After the NTLM exchange completes, some servers send an additional
+        // STATUS_MORE_PROCESSING_REQUIRED with a final SPNEGO accept token
+        // (e.g. mechListMIC verification) before STATUS_SUCCESS.  Accept both
+        // statuses so the session setup can proceed.
+        let expected_status: &[Status] = if is_auth_done {
+            &[Status::Success, Status::MoreProcessingRequired]
         } else {
             &[Status::MoreProcessingRequired]
         };
@@ -221,7 +293,11 @@ where
                 .await?
                 .channel
                 .is_some();
-        let skip_security_validation = !is_auth_done && !channel_set_up;
+        // Skip security validation when the channel (signing keys) is not
+        // yet available.  This covers both the initial rounds (auth not done)
+        // AND extra SPNEGO rounds after NTLM completes but before
+        // make_channel() derives the session key.
+        let skip_security_validation = !channel_set_up;
         if let Some(handler) = &self.handler {
             log::trace!(
                 "setup loop: receiving with channel handler; skip_security_validation={skip_security_validation}"
@@ -230,7 +306,6 @@ where
                 .recvo_internal(roptions, skip_security_validation)
                 .await
         } else {
-            assert!(skip_security_validation);
             log::trace!("setup loop: receiving with upstream handler");
             self.upstream.handler.recvo(roptions).await
         }
@@ -261,10 +336,20 @@ where
         T::on_session_key_exchanged(self).await?;
         log::trace!("Session keys are set.");
 
+        let session_key = self.session_key()?;
+        let preauth_hash_val = self.preauth_hash_value();
+        if cfg!(feature = "__debug-dump-keys") {
+            log::debug!(
+                "make_channel: session_key={:02x?}, preauth_hash(first 16)={:02x?}",
+                session_key,
+                preauth_hash_val.as_ref().map(|h| &h[..16])
+            );
+        }
+
         let channel_info = ChannelInfo::new(
             self.new_channel_id,
-            &self.session_key()?,
-            &self.preauth_hash_value(),
+            &session_key,
+            &preauth_hash_val,
             self.conn_info,
         )?;
 
@@ -291,7 +376,19 @@ where
 
     fn next_preauth_hash(&mut self, data: &IoVec) -> &PreauthHashState {
         if let Some(ref mut hash) = self.preauth_hash {
-            *hash = hash.clone().next(data);
+            if hash.is_in_progress() {
+                log::trace!(
+                    "preauth hash: chaining {} bytes ({} segments)",
+                    data.total_size(),
+                    data.len()
+                );
+                *hash = hash.clone().next(data);
+                if cfg!(feature = "__debug-dump-keys") {
+                    if let &mut PreauthHashState::InProgress(ref h) = hash {
+                        log::debug!("preauth hash (updated): {:02x?}", &h[..16]);
+                    }
+                }
+            }
         }
         self.preauth_hash.as_ref().unwrap()
     }
