@@ -73,6 +73,28 @@ impl Authenticator {
         identity: AuthIdentity,
         conn_info: &Arc<ConnectionInfo>,
     ) -> crate::Result<Authenticator> {
+        // This authenticator drives the NTLM SSP directly (see module docs).
+        // It does not implement Kerberos — the previous `Negotiate` SSP path
+        // that used to cover Kerberos produced NegoEx framing Windows SMB
+        // servers reject, so it was removed.  To avoid silently downgrading a
+        // user who explicitly asked for Kerberos, fail fast here when the
+        // connection config requests it.
+        let auth_methods = &conn_info.config.auth_methods;
+        if auth_methods.kerberos && !auth_methods.ntlm {
+            return Err(Error::UnsupportedAuthenticationMechanism(
+                "Kerberos-only authentication is not supported by this build; \
+                 enable NTLM (auth_methods.ntlm = true) or use a build with \
+                 Kerberos support".into(),
+            ));
+        }
+        if auth_methods.kerberos {
+            log::warn!(
+                "AuthMethodsConfig.kerberos = true but this build only \
+                 implements NTLM; falling back to NTLM. Set kerberos = false \
+                 to silence this warning."
+            );
+        }
+
         let mut ntlm_ssp = Ntlm::with_config(NtlmConfig::default());
         let user_name = identity.username.clone();
 

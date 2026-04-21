@@ -187,27 +187,23 @@ where
             if is_auth_done {
                 if server_needs_more {
                     // Server returned MORE_PROCESSING_REQUIRED even though NTLM
-                    // authentication is already complete. This means the SPNEGO
-                    // layer accepted the credentials but still wants another MIC
-                    // confirmation round. Windows SMB servers do not accept a
-                    // third SessionSetup in this case (they respond with
-                    // INVALID_PARAMETER).
+                    // authentication is already complete on our side.  This
+                    // typically means the SPNEGO `mechListMIC` we embedded in
+                    // Type-3 was missing or incorrect, so the server is asking
+                    // for another round our state machine cannot produce.
                     //
-                    // Per MS-SMB2 §3.2.5.3, a MORE_PROCESSING_REQUIRED response
-                    // is normally chained into the preauth hash. However in this
-                    // branch the server may have already finalized auth
-                    // internally, so we deliberately do NOT chain this response
-                    // and try to finalize the session anyway.
-                    //
-                    // Hitting this path usually indicates the client failed to
-                    // include a mechListMIC in Type-3. The intended flow is the
-                    // 2-round mode where the MIC is embedded in Type-3.
-                    log::warn!(
-                        "NTLM auth done but server wants more SPNEGO rounds; \
-                         attempting to finalize session anyway"
-                    );
-                    // Intentionally do not chain resp2 into preauth hash
-                    // (treated as the final response).
+                    // Per MS-SMB2 §3.2.5.3, accepting this response as "final"
+                    // would leave the client using a session the server has
+                    // not actually acknowledged as complete.  Rather than
+                    // silently continuing with a half-negotiated session, fail
+                    // fast so the caller can diagnose and fix the underlying
+                    // mechListMIC or SPNEGO flow.
+                    return Err(Error::InvalidState(format!(
+                        "NTLM auth completed locally but server still returned \
+                         STATUS_MORE_PROCESSING_REQUIRED; refusing to finalize \
+                         a session the server has not accepted \
+                         (likely a bad Type-3 mechListMIC). round={round}"
+                    )));
                 }
 
                 // preauth_hash has already been finalized right after

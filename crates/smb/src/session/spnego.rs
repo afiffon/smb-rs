@@ -80,12 +80,26 @@ fn der_read_length(data: &[u8]) -> crate::Result<(usize, usize)> {
 
 /// Skip a DER tag byte + length field, returning the total header size
 /// and the value length.
+///
+/// Also validates that the declared value is actually present in `data`,
+/// so callers can trust `val_len` without further clamping.  A truncated
+/// TLV is rejected up front instead of being silently clipped.
 fn der_skip_header(data: &[u8]) -> crate::Result<(usize, usize)> {
     if data.is_empty() {
         return Err(Error::InvalidMessage("DER: unexpected end of data".into()));
     }
     let (val_len, len_bytes) = der_read_length(&data[1..])?;
-    Ok((1 + len_bytes, val_len))
+    let header_len = 1 + len_bytes;
+    let total = header_len
+        .checked_add(val_len)
+        .ok_or_else(|| Error::InvalidMessage("DER: length overflow".into()))?;
+    if data.len() < total {
+        return Err(Error::InvalidMessage(format!(
+            "DER: truncated value (declared {val_len} bytes, have {} after header)",
+            data.len().saturating_sub(header_len)
+        )));
+    }
+    Ok((header_len, val_len))
 }
 
 // ── Public API ───────────────────────────────────────────────────────
@@ -265,25 +279,23 @@ pub fn unwrap_init(gss_token: &[u8]) -> crate::Result<Vec<u8>> {
         return Err(Error::InvalidMessage("SPNEGO: expected SEQUENCE in NegTokenInit".into()));
     }
     let (seq_hdr, seq_len) = der_skip_header(neg_token)?;
-    let seq_body = &neg_token[seq_hdr..];
-    let seq_end = seq_len.min(seq_body.len());
+    let seq_body = &neg_token[seq_hdr..seq_hdr + seq_len];
     let mut pos = 0;
 
-    while pos < seq_end {
+    while pos < seq_len {
         let tag = seq_body[pos];
         let (elem_hdr, elem_len) = der_skip_header(&seq_body[pos..])?;
 
         if tag == 0xa2 {
             // [2] mechToken — extract the OCTET STRING inside.
-            let elem_body = &seq_body[pos + elem_hdr..];
+            let elem_body = &seq_body[pos + elem_hdr..pos + elem_hdr + elem_len];
             if elem_body.is_empty() || elem_body[0] != 0x04 {
                 return Err(Error::InvalidMessage(
                     "SPNEGO: expected OCTET STRING inside mechToken".into(),
                 ));
             }
             let (octet_hdr, octet_len) = der_skip_header(elem_body)?;
-            let end = octet_hdr + octet_len.min(elem_body.len() - octet_hdr);
-            return Ok(elem_body[octet_hdr..end].to_vec());
+            return Ok(elem_body[octet_hdr..octet_hdr + octet_len].to_vec());
         }
 
         pos += elem_hdr + elem_len;
@@ -334,26 +346,23 @@ pub fn unwrap_response(gss_token: &[u8]) -> crate::Result<Vec<u8>> {
     }
 
     let (seq_hdr, seq_len) = der_skip_header(inner)?;
-    let seq_body = &inner[seq_hdr..];
-    let seq_end = seq_len.min(seq_body.len());
+    let seq_body = &inner[seq_hdr..seq_hdr + seq_len];
     let mut pos = 0;
 
-    while pos < seq_end {
+    while pos < seq_len {
         let tag = seq_body[pos];
         let (elem_hdr, elem_len) = der_skip_header(&seq_body[pos..])?;
 
         if tag == 0xa2 {
             // [2] responseToken — should contain OCTET STRING.
-            let elem_body = &seq_body[pos + elem_hdr..];
+            let elem_body = &seq_body[pos + elem_hdr..pos + elem_hdr + elem_len];
             if elem_body.is_empty() || elem_body[0] != 0x04 {
                 return Err(Error::InvalidMessage(
                     "SPNEGO: expected OCTET STRING inside responseToken".into(),
                 ));
             }
             let (octet_hdr, octet_len) = der_skip_header(elem_body)?;
-            let start = octet_hdr;
-            let end = start + octet_len.min(elem_body.len() - start);
-            return Ok(elem_body[start..end].to_vec());
+            return Ok(elem_body[octet_hdr..octet_hdr + octet_len].to_vec());
         }
 
         pos += elem_hdr + elem_len;
