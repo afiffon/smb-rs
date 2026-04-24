@@ -182,7 +182,12 @@ mod client_impl {
     }
 }
 
+// This blocking variant is kept upstream for API symmetry but is not
+// constructed by any caller in the current crate (the `Ntlm` SSP path
+// used by `Authenticator` never instantiates a network client).  Silence
+// the stricter nightly clippy warnings instead of deleting upstream code.
 #[cfg(not(feature = "async"))]
+#[allow(dead_code)]
 mod client_impl {
     use super::*;
     use byteorder::{BigEndian, ReadBytesExt};
@@ -299,4 +304,5 @@ mod client_impl {
     }
 }
 
+#[allow(unused_imports)]
 pub use client_impl::*;

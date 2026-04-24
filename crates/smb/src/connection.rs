@@ -375,11 +375,13 @@ impl Connection {
             OsRng.fill_bytes(&mut preauth_integrity_hash);
 
             // 0x0001 - SMB2_PREAUTH_INTEGRITY_CAPABILITIES (mandatory for 3.1.1)
-            let mut ctx_list = vec![PreauthIntegrityCapabilities {
-                hash_algorithms: vec![HashAlgorithm::Sha512],
-                salt: preauth_integrity_hash.to_vec(),
-            }
-            .into()];
+            let mut ctx_list = vec![
+                PreauthIntegrityCapabilities {
+                    hash_algorithms: vec![HashAlgorithm::Sha512],
+                    salt: preauth_integrity_hash.to_vec(),
+                }
+                .into(),
+            ];
 
             // 0x0002 - SMB2_ENCRYPTION_CAPABILITIES
             // MS-SMB2: CipherCount MUST be greater than zero, so only include this

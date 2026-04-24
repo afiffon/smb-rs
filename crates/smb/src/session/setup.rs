@@ -375,19 +375,19 @@ where
     }
 
     fn next_preauth_hash(&mut self, data: &IoVec) -> &PreauthHashState {
-        if let Some(ref mut hash) = self.preauth_hash {
-            if hash.is_in_progress() {
-                log::trace!(
-                    "preauth hash: chaining {} bytes ({} segments)",
-                    data.total_size(),
-                    data.len()
-                );
-                *hash = hash.clone().next(data);
-                if cfg!(feature = "__debug-dump-keys") {
-                    if let &mut PreauthHashState::InProgress(ref h) = hash {
-                        log::debug!("preauth hash (updated): {:02x?}", &h[..16]);
-                    }
-                }
+        if let Some(ref mut hash) = self.preauth_hash
+            && hash.is_in_progress()
+        {
+            log::trace!(
+                "preauth hash: chaining {} bytes ({} segments)",
+                data.total_size(),
+                data.len()
+            );
+            *hash = hash.clone().next(data);
+            if cfg!(feature = "__debug-dump-keys")
+                && let &mut PreauthHashState::InProgress(ref h) = hash
+            {
+                log::debug!("preauth hash (updated): {:02x?}", &h[..16]);
             }
         }
         self.preauth_hash.as_ref().unwrap()

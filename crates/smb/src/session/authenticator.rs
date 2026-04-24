@@ -3,13 +3,13 @@ use std::sync::Arc;
 use crate::Error;
 use crate::connection::connection_info::ConnectionInfo;
 use maybe_async::*;
+use sspi::Username;
 use sspi::{
     AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers, BufferType,
     ClientRequestFlags, CredentialUse, DataRepresentation, InitializeSecurityContextResult,
     SecurityBuffer, Sspi, SspiImpl,
     ntlm::{Ntlm, NtlmConfig},
 };
-use sspi::Username;
 
 fn rc4_crypt(key: &[u8], data: &[u8]) -> Vec<u8> {
     let mut s: Vec<u8> = (0..=255).collect();
@@ -84,7 +84,8 @@ impl Authenticator {
             return Err(Error::UnsupportedAuthenticationMechanism(
                 "Kerberos-only authentication is not supported by this build; \
                  enable NTLM (auth_methods.ntlm = true) or use a build with \
-                 Kerberos support".into(),
+                 Kerberos support"
+                    .into(),
             ));
         }
         if auth_methods.kerberos {
@@ -135,13 +136,16 @@ impl Authenticator {
     ///
     /// Implements the MIC computation described in [MS-SPNG] §3.1.5.1 +
     /// [MS-NLMP] §3.4.4.1:
-    ///   1. Derive ClientSigningKey and ClientSealingKey from ExportedSessionKey.
-    ///   2. Digest = HMAC-MD5(ClientSigningKey, seq_num_le || mechTypeList).
-    ///   3. If NTLMSSP_NEGOTIATE_KEY_EXCH was negotiated:
-    ///         Checksum = RC4(ClientSealingKey, Digest[0:8])
-    ///      Otherwise:
-    ///         Checksum = Digest[0:8]  (NTLMv2 + ESS without key exchange).
-    ///   4. MIC = version(1u32_le) || Checksum || seq_num_le.
+    ///
+    /// ```text
+    /// 1. Derive ClientSigningKey and ClientSealingKey from ExportedSessionKey.
+    /// 2. Digest = HMAC-MD5(ClientSigningKey, seq_num_le || mechTypeList).
+    /// 3. If NTLMSSP_NEGOTIATE_KEY_EXCH was negotiated:
+    ///        Checksum = RC4(ClientSealingKey, Digest[0:8])
+    ///    Otherwise:
+    ///        Checksum = Digest[0:8]  (NTLMv2 + ESS without key exchange).
+    /// 4. MIC = version(1u32_le) || Checksum || seq_num_le.
+    /// ```
     ///
     /// `ntlm_negotiate_flags` MUST be the NegotiateFlags value actually sent on
     /// the wire in the AUTHENTICATE_MESSAGE (Type-3); otherwise server-side
@@ -163,7 +167,7 @@ impl Authenticator {
         let client_sign_magic = b"session key to client-to-server signing key magic constant\x00";
         let signing_key: [u8; 16] = {
             let mut hasher = <Md5 as md5::Digest>::new();
-            md5::Digest::update(&mut hasher, &session_key);
+            md5::Digest::update(&mut hasher, session_key);
             md5::Digest::update(&mut hasher, client_sign_magic.as_slice());
             md5::Digest::finalize(hasher).into()
         };
@@ -172,7 +176,7 @@ impl Authenticator {
         let client_seal_magic = b"session key to client-to-server sealing key magic constant\x00";
         let sealing_key: [u8; 16] = {
             let mut hasher = <Md5 as md5::Digest>::new();
-            md5::Digest::update(&mut hasher, &session_key);
+            md5::Digest::update(&mut hasher, session_key);
             md5::Digest::update(&mut hasher, client_seal_magic.as_slice());
             md5::Digest::finalize(hasher).into()
         };
@@ -301,7 +305,8 @@ impl Authenticator {
                 Error::InvalidState("Failed to parse NegotiateFlags from NTLM Type-3".into())
             })?;
             log::trace!("NTLM Type-3 NegotiateFlags: 0x{:08x}", ntlm_flags);
-            let mic = self.compute_mech_list_mic(super::spnego::MECH_TYPE_LIST_BYTES, ntlm_flags)?;
+            let mic =
+                self.compute_mech_list_mic(super::spnego::MECH_TYPE_LIST_BYTES, ntlm_flags)?;
             let wrapped = super::spnego::wrap_response_with_mic(&raw_token, &mic);
             log::trace!(
                 "SPNEGO: NTLM Type-3 ({} bytes) + MIC -> NegTokenResp ({} bytes)",

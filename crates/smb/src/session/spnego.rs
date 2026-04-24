@@ -38,12 +38,7 @@ fn der_encode_length(len: usize) -> Vec<u8> {
     } else if len < 0x10000 {
         vec![0x82, (len >> 8) as u8, len as u8]
     } else {
-        vec![
-            0x83,
-            (len >> 16) as u8,
-            (len >> 8) as u8,
-            len as u8,
-        ]
+        vec![0x83, (len >> 16) as u8, (len >> 8) as u8, len as u8]
     }
 }
 
@@ -68,7 +63,9 @@ fn der_read_length(data: &[u8]) -> crate::Result<(usize, usize)> {
     } else {
         let num_bytes = (first & 0x7f) as usize;
         if num_bytes == 0 || num_bytes > 3 || data.len() < 1 + num_bytes {
-            return Err(Error::InvalidMessage("DER: unsupported length encoding".into()));
+            return Err(Error::InvalidMessage(
+                "DER: unsupported length encoding".into(),
+            ));
         }
         let mut val: usize = 0;
         for i in 0..num_bytes {
@@ -216,6 +213,10 @@ pub const MECH_TYPE_LIST_BYTES_TAGGED: &[u8] = &[
 /// exchange is complete.  Per RFC 4178 §5, when the preferred mechanism
 /// is the common mechanism and optimistic token was used, the response
 /// need not include a mechListMIC.
+///
+/// Kept for symmetry with [`make_accept_complete_with_mic`] and for
+/// servers that might require an empty accept-complete acknowledgment.
+#[allow(dead_code)]
 pub fn make_accept_complete() -> Vec<u8> {
     let neg_state = der_tlv(0x0a, &[0x00]); // ENUMERATED: accept-completed
     let neg_state_ctx = der_tlv(0xa0, &neg_state); // [0]
@@ -247,14 +248,18 @@ pub fn make_accept_complete_with_mic(mic: &[u8]) -> Vec<u8> {
 ///
 /// Returns the raw mechanism token (NTLM Type-1), or an error if the
 /// structure cannot be parsed.
+///
+/// Kept for symmetry with [`wrap_init`] — only `unwrap_response` is
+/// currently exercised on the NTLM path, but this helper is useful for
+/// callers that need to strip an outer SPNEGO layer from an incoming
+/// initial token (e.g. when proxying or re-wrapping).
+#[allow(dead_code)]
 pub fn unwrap_init(gss_token: &[u8]) -> crate::Result<Vec<u8>> {
     if gss_token.is_empty() || gss_token[0] != 0x60 {
-        return Err(Error::InvalidMessage(
-            format!(
-                "SPNEGO: expected APPLICATION[0] (0x60), got 0x{:02x}",
-                gss_token.first().copied().unwrap_or(0)
-            ),
-        ));
+        return Err(Error::InvalidMessage(format!(
+            "SPNEGO: expected APPLICATION[0] (0x60), got 0x{:02x}",
+            gss_token.first().copied().unwrap_or(0)
+        )));
     }
 
     // Skip APPLICATION[0] header.
@@ -263,20 +268,26 @@ pub fn unwrap_init(gss_token: &[u8]) -> crate::Result<Vec<u8>> {
 
     // Skip the SPNEGO OID (should be 06 06 2b 06 01 05 05 02).
     if inner.len() < SPNEGO_OID.len() || &inner[..SPNEGO_OID.len()] != SPNEGO_OID {
-        return Err(Error::InvalidMessage("SPNEGO: missing SPNEGO OID in NegTokenInit".into()));
+        return Err(Error::InvalidMessage(
+            "SPNEGO: missing SPNEGO OID in NegTokenInit".into(),
+        ));
     }
     let after_oid = &inner[SPNEGO_OID.len()..];
 
     // Skip [0] NegotiationToken wrapper.
     if after_oid.is_empty() || after_oid[0] != 0xa0 {
-        return Err(Error::InvalidMessage("SPNEGO: expected [0] in NegTokenInit".into()));
+        return Err(Error::InvalidMessage(
+            "SPNEGO: expected [0] in NegTokenInit".into(),
+        ));
     }
     let (ctx0_hdr, _) = der_skip_header(after_oid)?;
     let neg_token = &after_oid[ctx0_hdr..];
 
     // Skip SEQUENCE (NegTokenInit body).
     if neg_token.is_empty() || neg_token[0] != 0x30 {
-        return Err(Error::InvalidMessage("SPNEGO: expected SEQUENCE in NegTokenInit".into()));
+        return Err(Error::InvalidMessage(
+            "SPNEGO: expected SEQUENCE in NegTokenInit".into(),
+        ));
     }
     let (seq_hdr, seq_len) = der_skip_header(neg_token)?;
     let seq_body = &neg_token[seq_hdr..seq_hdr + seq_len];
@@ -329,12 +340,10 @@ pub fn unwrap_response(gss_token: &[u8]) -> crate::Result<Vec<u8>> {
 
     // Expect outer tag [1] (NegTokenResp).
     if gss_token.is_empty() || gss_token[0] != 0xa1 {
-        return Err(Error::InvalidMessage(
-            format!(
-                "SPNEGO: expected NegTokenResp (0xa1), got 0x{:02x}",
-                gss_token.first().copied().unwrap_or(0)
-            ),
-        ));
+        return Err(Error::InvalidMessage(format!(
+            "SPNEGO: expected NegTokenResp (0xa1), got 0x{:02x}",
+            gss_token.first().copied().unwrap_or(0)
+        )));
     }
 
     let (hdr_size, _) = der_skip_header(gss_token)?;
@@ -342,7 +351,9 @@ pub fn unwrap_response(gss_token: &[u8]) -> crate::Result<Vec<u8>> {
 
     // Inner must be SEQUENCE.
     if inner.is_empty() || inner[0] != 0x30 {
-        return Err(Error::InvalidMessage("SPNEGO: expected SEQUENCE inside NegTokenResp".into()));
+        return Err(Error::InvalidMessage(
+            "SPNEGO: expected SEQUENCE inside NegTokenResp".into(),
+        ));
     }
 
     let (seq_hdr, seq_len) = der_skip_header(inner)?;
