@@ -128,8 +128,19 @@ impl Authenticator {
 
     pub fn session_key(&self) -> crate::Result<[u8; 16]> {
         let key_info = self.ssp.query_context_session_key()?;
-        let k = &key_info.session_key.as_ref()[..16];
-        Ok(k.try_into().unwrap())
+        let full = key_info.session_key.as_ref();
+        // A well-formed NTLMv2 session always has a 16-byte ExportedSessionKey.
+        // Validate the length instead of `.try_into().unwrap()` so a malformed
+        // upstream response degrades gracefully rather than panicking.
+        if full.len() < 16 {
+            return Err(Error::InvalidState(format!(
+                "NTLM session key too short: {} bytes (expected ≥ 16)",
+                full.len()
+            )));
+        }
+        let mut out = [0u8; 16];
+        out.copy_from_slice(&full[..16]);
+        Ok(out)
     }
 
     /// Compute the SPNEGO mechListMIC manually.

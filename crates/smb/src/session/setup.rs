@@ -216,18 +216,18 @@ where
                     self.make_channel().await?;
                 }
 
-                if !server_needs_more
-                    && !session_setup_response
-                        .session_flags
-                        .is_guest_or_null_session()
+                // `server_needs_more == true` already returned above, so we
+                // know the server accepted this as the final response.  Only
+                // the guest / null-session / signed-message checks remain.
+                if !session_setup_response
+                    .session_flags
+                    .is_guest_or_null_session()
                     && !message_form.signed_or_encrypted()
                 {
                     return Err(Error::InvalidMessage(
                         "Expected a signed message!".to_string(),
                     ));
                 }
-
-                server_needs_more = false;
             } else {
                 // Intermediate response: chain into preauth hash and continue.
                 self.next_preauth_hash(&response.raw);

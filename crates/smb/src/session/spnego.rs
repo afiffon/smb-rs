@@ -37,8 +37,15 @@ fn der_encode_length(len: usize) -> Vec<u8> {
         vec![0x81, len as u8]
     } else if len < 0x10000 {
         vec![0x82, (len >> 8) as u8, len as u8]
-    } else {
+    } else if len < 0x100_0000 {
         vec![0x83, (len >> 16) as u8, (len >> 8) as u8, len as u8]
+    } else {
+        // `der_read_length` rejects any length field wider than 3 bytes, so we
+        // must match that ceiling here instead of silently truncating the high
+        // byte into an on-the-wire TLV with the wrong declared size.  NTLM
+        // Type-1/3 tokens are orders of magnitude below this limit, so this is
+        // an invariant, not a runtime concern.
+        panic!("DER: value length {len} exceeds the supported 24-bit encoding ceiling")
     }
 }
 
@@ -444,5 +451,30 @@ mod tests {
         let raw = b"NTLMSSP\x00\x02\x00\x00\x00";
         let extracted = unwrap_response(raw).unwrap();
         assert_eq!(&extracted, raw);
+    }
+
+    #[test]
+    fn der_encode_length_covers_each_branch() {
+        // Short form (1 byte).
+        assert_eq!(der_encode_length(0x00), vec![0x00]);
+        assert_eq!(der_encode_length(0x7F), vec![0x7F]);
+        // Long form, 1 length byte.
+        assert_eq!(der_encode_length(0x80), vec![0x81, 0x80]);
+        assert_eq!(der_encode_length(0xFF), vec![0x81, 0xFF]);
+        // Long form, 2 length bytes.
+        assert_eq!(der_encode_length(0x0100), vec![0x82, 0x01, 0x00]);
+        assert_eq!(der_encode_length(0xFFFF), vec![0x82, 0xFF, 0xFF]);
+        // Long form, 3 length bytes.
+        assert_eq!(der_encode_length(0x01_0000), vec![0x83, 0x01, 0x00, 0x00]);
+        assert_eq!(der_encode_length(0xFF_FFFF), vec![0x83, 0xFF, 0xFF, 0xFF]);
+    }
+
+    /// The decoder rejects any length field wider than 3 bytes, so the
+    /// encoder must refuse to emit one instead of silently truncating the
+    /// high byte into a malformed TLV.
+    #[test]
+    #[should_panic(expected = "exceeds the supported 24-bit encoding ceiling")]
+    fn der_encode_length_rejects_over_24_bits() {
+        let _ = der_encode_length(0x0100_0000);
     }
 }
