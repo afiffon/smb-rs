@@ -65,13 +65,6 @@ impl File {
             return Ok(0);
         }
 
-        if !self.access.file_read_data() {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::PermissionDenied,
-                "No read permission",
-            ));
-        }
-
         // EOF
         if pos >= self.end_of_file {
             return Ok(0);
