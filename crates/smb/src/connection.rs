@@ -117,13 +117,13 @@ impl Connection {
 
         log::info!(
             "Connecting to {} (at {actual_connect_address})...",
-            &self.server_name,
+            self.server_name,
         );
         transport
             .connect(&self.server_name, actual_connect_address)
             .await?;
 
-        log::info!("Connected to {}. Negotiating.", &self.server_name);
+        log::info!("Connected to {}. Negotiating.", self.server_name);
         self._negotiate(transport, self.config.smb2_only_negotiate)
             .await?;
 
@@ -325,7 +325,7 @@ impl Connection {
         log::trace!(
             "Negotiated SMB results: dialect={:?}, state={:?}",
             dialect_rev,
-            &negotiation
+            negotiation
         );
 
         let preauth_hash = if dialect_impl.preauth_hash_supported() {

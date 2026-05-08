@@ -88,7 +88,7 @@ impl MessageDecryptor {
         self.algo
             .decrypt(&mut buffer, &aead_bytes, &nonce, signature)?;
 
-        log::trace!("Decrypted message data bytes: {:x?}", &buffer);
+        log::trace!("Decrypted message data bytes: {:x?}", buffer);
         // deserialize
         let result = Response::read(&mut Cursor::new(&buffer))?;
 

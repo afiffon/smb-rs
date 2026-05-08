@@ -120,18 +120,18 @@ impl Client {
     pub async fn close(&self) -> crate::Result<()> {
         // Close all opened shares
         let mut trees = self.share_connects.lock().await?;
-        for (_unc, connected_tree) in trees.iter() {
+        for connected_tree in trees.values() {
             connected_tree.tree.disconnect().await?;
         }
         trees.clear();
 
         let mut connections = self.connections.write().await?;
         // Close sessions
-        for (_unc, conn) in connections.iter_mut() {
-            for (_session_id, session) in conn.sessions.iter_mut() {
+        for conn in connections.values_mut() {
+            for session in conn.sessions.values_mut() {
                 // First close alternate channels
                 if let Some(alt_channels) = &mut session.session_alt_channels {
-                    for (_channel_id, alt_conn) in alt_channels.iter() {
+                    for alt_conn in alt_channels.values() {
                         alt_conn.connection.close().await.ok();
                     }
                     alt_channels.clear();
@@ -141,7 +141,7 @@ impl Client {
             }
         }
         // Close connections
-        for (_ip, conn) in connections.iter() {
+        for conn in connections.values() {
             conn.connection.close().await.ok();
         }
         connections.clear();

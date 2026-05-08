@@ -284,7 +284,7 @@ where
             if state.pending.contains_key(&options.msg_id) {
                 log::trace!(
                     "Message with ID {} is already received, remove from pending.",
-                    &options.msg_id
+                    options.msg_id
                 );
                 let data = state.pending.remove(&options.msg_id).ok_or_else(|| {
                     Error::InvalidState("Message ID not found in pending messages.".to_string())
