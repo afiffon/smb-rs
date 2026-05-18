@@ -5,19 +5,36 @@ use crate::connection::AuthMethodsConfig;
 use crate::connection::connection_info::ConnectionInfo;
 use maybe_async::*;
 use sspi::{
-    AcquireCredentialsHandleResult, AuthIdentity, BufferType, ClientRequestFlags, CredentialUse,
-    DataRepresentation, InitializeSecurityContextResult, Negotiate, SecurityBuffer, Sspi,
-    ntlm::NtlmConfig,
+    AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers, BufferType,
+    ClientRequestFlags, CredentialUse, DataRepresentation, InitializeSecurityContextResult,
+    Negotiate, Ntlm, SecurityBuffer, Sspi, ntlm::NtlmConfig,
 };
 use sspi::{CredentialsBuffers, NegotiateConfig, SspiImpl, Username};
+
+/// Wraps either a raw NTLM SSP or the SPNEGO `Negotiate` SSP.
+///
+/// `Negotiate` is required when Kerberos may be selected. For NTLM-only flows we use
+/// `Ntlm` directly: sspi >= 0.18.8 wraps NTLM in SPNEGO via `Negotiate`, and Samba (at
+/// least the test image) rejects the resulting AUTHENTICATE — see sspi-rs#600.
+#[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
+enum Ssp {
+    Ntlm {
+        ssp: Ntlm,
+        cred_handle: AcquireCredentialsHandleResult<Option<AuthIdentityBuffers>>,
+    },
+    Negotiate {
+        ssp: Box<Negotiate>,
+        cred_handle: AcquireCredentialsHandleResult<Option<CredentialsBuffers>>,
+    },
+}
 
 #[derive(Debug)]
 pub struct Authenticator {
     server_hostname: String,
     user_name: Username,
 
-    ssp: Negotiate,
-    cred_handle: AcquireCredentialsHandleResult<Option<CredentialsBuffers>>,
+    ssp: Ssp,
     current_state: Option<InitializeSecurityContextResult>,
 }
 
@@ -32,23 +49,40 @@ impl Authenticator {
             .as_ref()
             .unwrap_or(&String::from("smb-rs"))
             .clone();
-        let mut negotiate_ssp = Negotiate::new_client(NegotiateConfig::new(
-            Box::new(NtlmConfig::default()),
-            Some(Self::get_available_ssp_pkgs(&conn_info.config.auth_methods)),
-            client_computer_name,
-        ))?;
         let user_name = identity.username.clone();
 
-        let cred_handle = negotiate_ssp
-            .acquire_credentials_handle()
-            .with_credential_use(CredentialUse::Outbound)
-            .with_auth_data(&sspi::Credentials::AuthIdentity(identity.clone()))
-            .execute(&mut negotiate_ssp)?;
+        let use_negotiate = cfg!(feature = "kerberos") && conn_info.config.auth_methods.kerberos;
+        let ssp = if use_negotiate {
+            let mut negotiate_ssp = Negotiate::new_client(NegotiateConfig::new(
+                Box::new(NtlmConfig::new(client_computer_name.clone())),
+                Some(Self::get_available_ssp_pkgs(&conn_info.config.auth_methods)),
+                client_computer_name,
+            ))?;
+            let cred_handle = negotiate_ssp
+                .acquire_credentials_handle()
+                .with_credential_use(CredentialUse::Outbound)
+                .with_auth_data(&sspi::Credentials::AuthIdentity(identity))
+                .execute(&mut negotiate_ssp)?;
+            Ssp::Negotiate {
+                ssp: Box::new(negotiate_ssp),
+                cred_handle,
+            }
+        } else {
+            let mut ntlm_ssp = Ntlm::with_config(NtlmConfig::new(client_computer_name));
+            let cred_handle = ntlm_ssp
+                .acquire_credentials_handle()
+                .with_credential_use(CredentialUse::Outbound)
+                .with_auth_data(&identity)
+                .execute(&mut ntlm_ssp)?;
+            Ssp::Ntlm {
+                ssp: ntlm_ssp,
+                cred_handle,
+            }
+        };
 
         Ok(Authenticator {
             server_hostname: conn_info.server_name.clone(),
-            ssp: negotiate_ssp,
-            cred_handle,
+            ssp,
             current_state: None,
             user_name,
         })
@@ -66,8 +100,10 @@ impl Authenticator {
     }
 
     pub fn session_key(&self) -> crate::Result<[u8; 16]> {
-        // Use the first 16 bytes of the session key.
-        let key_info = self.ssp.query_context_session_key()?;
+        let key_info = match &self.ssp {
+            Ssp::Ntlm { ssp, .. } => ssp.query_context_session_key()?,
+            Ssp::Negotiate { ssp, .. } => ssp.query_context_session_key()?,
+        };
         let k = &key_info.session_key.as_ref()[..16];
         Ok(k.try_into().unwrap())
     }
@@ -101,49 +137,59 @@ impl Authenticator {
         }
 
         let mut output_buffer = vec![SecurityBuffer::new(Vec::new(), BufferType::Token)];
+        let mut input_buffers =
+            vec![SecurityBuffer::new(gss_token.to_owned(), BufferType::Token)];
         let target_name = Self::make_sspi_target_name(&self.server_hostname);
-        let mut builder = self
-            .ssp
-            .initialize_security_context()
-            .with_credentials_handle(&mut self.cred_handle.credentials_handle)
-            .with_context_requirements(Self::get_context_requirements())
-            .with_target_data_representation(Self::SSPI_REQ_DATA_REPRESENTATION)
-            .with_output(&mut output_buffer);
 
-        if cfg!(feature = "kerberos") {
-            builder = builder.with_target_name(&target_name)
-        }
-
-        let mut input_buffers = vec![];
-        input_buffers.push(SecurityBuffer::new(gss_token.to_owned(), BufferType::Token));
-        builder = builder.with_input(&mut input_buffers);
-
-        let result = {
-            let mut generator = self.ssp.initialize_security_context_impl(&mut builder)?;
-            // Kerberos requires a network client to be set up.
-            // We avoid compiling with the network client if kerberos is not enabled,
-            // so be sure to avoid using it in that case.
-            // while default, sync network client is supported in sspi,
-            // an implementation of the async one had to be added in this module.
-            #[cfg(feature = "kerberos")]
-            {
-                use super::sspi_network_client::ReqwestNetworkClient;
-                #[cfg(feature = "async")]
-                {
-                    Self::_resolve_with_async_client(
-                        &mut generator,
-                        &mut ReqwestNetworkClient::new(),
-                    )
-                    .await?
-                }
-                #[cfg(not(feature = "async"))]
-                {
-                    generator.resolve_with_client(&ReqwestNetworkClient {})?
-                }
+        let result = match &mut self.ssp {
+            Ssp::Ntlm { ssp, cred_handle } => {
+                let mut builder = ssp
+                    .initialize_security_context()
+                    .with_credentials_handle(&mut cred_handle.credentials_handle)
+                    .with_context_requirements(Self::get_context_requirements())
+                    .with_target_data_representation(Self::SSPI_REQ_DATA_REPRESENTATION)
+                    .with_output(&mut output_buffer)
+                    .with_input(&mut input_buffers);
+                // The NTLM generator never suspends — it has no network calls — so
+                // `resolve_to_result` completes synchronously.
+                ssp.initialize_security_context_impl(&mut builder)?
+                    .resolve_to_result()?
             }
-            #[cfg(not(feature = "kerberos"))]
-            {
-                generator.resolve_to_result()?
+            Ssp::Negotiate { ssp, cred_handle } => {
+                let mut builder = ssp
+                    .initialize_security_context()
+                    .with_credentials_handle(&mut cred_handle.credentials_handle)
+                    .with_context_requirements(Self::get_context_requirements())
+                    .with_target_data_representation(Self::SSPI_REQ_DATA_REPRESENTATION)
+                    .with_output(&mut output_buffer)
+                    .with_input(&mut input_buffers);
+                if cfg!(feature = "kerberos") {
+                    builder = builder.with_target_name(&target_name);
+                }
+                let mut generator = ssp.initialize_security_context_impl(&mut builder)?;
+                // Kerberos requires a network client to be set up.
+                // We avoid compiling with the network client if kerberos is not enabled,
+                // so be sure to avoid using it in that case.
+                #[cfg(feature = "kerberos")]
+                {
+                    use super::sspi_network_client::ReqwestNetworkClient;
+                    #[cfg(feature = "async")]
+                    {
+                        Self::_resolve_with_async_client(
+                            &mut generator,
+                            &mut ReqwestNetworkClient::new(),
+                        )
+                        .await?
+                    }
+                    #[cfg(not(feature = "async"))]
+                    {
+                        generator.resolve_with_client(&ReqwestNetworkClient {})?
+                    }
+                }
+                #[cfg(not(feature = "kerberos"))]
+                {
+                    generator.resolve_to_result()?
+                }
             }
         };
 
