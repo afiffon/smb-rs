@@ -29,6 +29,28 @@ enum Ssp {
     },
 }
 
+/// Which SSP to negotiate with, resolved from build features and `AuthMethodsConfig`.
+enum SspChoice {
+    Negotiate,
+    Ntlm,
+}
+
+impl SspChoice {
+    fn resolve(auth_methods: &AuthMethodsConfig) -> crate::Result<Self> {
+        if cfg!(feature = "kerberos") && auth_methods.kerberos {
+            Ok(Self::Negotiate)
+        } else if auth_methods.ntlm {
+            Ok(Self::Ntlm)
+        } else {
+            Err(Error::InvalidConfiguration(
+                "No usable authentication method: NTLM is disabled and Kerberos is unavailable \
+                 (either disabled in config or the `kerberos` feature is not enabled)."
+                    .to_string(),
+            ))
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Authenticator {
     server_hostname: String,
@@ -51,32 +73,34 @@ impl Authenticator {
             .clone();
         let user_name = identity.username.clone();
 
-        let use_negotiate = cfg!(feature = "kerberos") && conn_info.config.auth_methods.kerberos;
-        let ssp = if use_negotiate {
-            let mut negotiate_ssp = Negotiate::new_client(NegotiateConfig::new(
-                Box::new(NtlmConfig::new(client_computer_name.clone())),
-                Some(Self::get_available_ssp_pkgs(&conn_info.config.auth_methods)),
-                client_computer_name,
-            ))?;
-            let cred_handle = negotiate_ssp
-                .acquire_credentials_handle()
-                .with_credential_use(CredentialUse::Outbound)
-                .with_auth_data(&sspi::Credentials::AuthIdentity(identity))
-                .execute(&mut negotiate_ssp)?;
-            Ssp::Negotiate {
-                ssp: Box::new(negotiate_ssp),
-                cred_handle,
+        let ssp = match SspChoice::resolve(&conn_info.config.auth_methods)? {
+            SspChoice::Negotiate => {
+                let mut negotiate_ssp = Negotiate::new_client(NegotiateConfig::new(
+                    Box::new(NtlmConfig::new(client_computer_name.clone())),
+                    Some(Self::get_available_ssp_pkgs(&conn_info.config.auth_methods)),
+                    client_computer_name,
+                ))?;
+                let cred_handle = negotiate_ssp
+                    .acquire_credentials_handle()
+                    .with_credential_use(CredentialUse::Outbound)
+                    .with_auth_data(&sspi::Credentials::AuthIdentity(identity))
+                    .execute(&mut negotiate_ssp)?;
+                Ssp::Negotiate {
+                    ssp: Box::new(negotiate_ssp),
+                    cred_handle,
+                }
             }
-        } else {
-            let mut ntlm_ssp = Ntlm::with_config(NtlmConfig::new(client_computer_name));
-            let cred_handle = ntlm_ssp
-                .acquire_credentials_handle()
-                .with_credential_use(CredentialUse::Outbound)
-                .with_auth_data(&identity)
-                .execute(&mut ntlm_ssp)?;
-            Ssp::Ntlm {
-                ssp: ntlm_ssp,
-                cred_handle,
+            SspChoice::Ntlm => {
+                let mut ntlm_ssp = Ntlm::with_config(NtlmConfig::new(client_computer_name));
+                let cred_handle = ntlm_ssp
+                    .acquire_credentials_handle()
+                    .with_credential_use(CredentialUse::Outbound)
+                    .with_auth_data(&identity)
+                    .execute(&mut ntlm_ssp)?;
+                Ssp::Ntlm {
+                    ssp: ntlm_ssp,
+                    cred_handle,
+                }
             }
         };
 
