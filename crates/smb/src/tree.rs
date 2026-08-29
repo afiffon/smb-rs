@@ -8,7 +8,7 @@ use crate::FileCreateArgs;
 use crate::connection::connection_info::ConnectionInfo;
 use smb_fscc::{FileAccessMask, FileAttributes};
 use smb_msg::{
-    CreateOptions, RequestContent, ShareFlags, ShareType,
+    CreateOptions, RequestContent, ShareAccessFlags, ShareFlags, ShareType,
     create::CreateDisposition,
     tree_connect::{TreeConnectRequest, TreeDisconnectRequest},
 };
