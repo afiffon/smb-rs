@@ -37,6 +37,7 @@ pub struct FileCreateArgs {
     pub attributes: FileAttributes,
     pub options: CreateOptions,
     pub desired_access: FileAccessMask,
+    pub share_access: ShareAccessFlags,
 }
 
 impl FileCreateArgs {
@@ -46,6 +47,7 @@ impl FileCreateArgs {
             attributes: FileAttributes::new(),
             options: CreateOptions::new(),
             desired_access: access,
+            share_access: ShareAccessFlags::new(),
         }
     }
 
@@ -57,6 +59,7 @@ impl FileCreateArgs {
             attributes,
             options,
             desired_access: FileAccessMask::new().with_generic_all(true),
+            share_access: ShareAccessFlags::new(),
         }
     }
 
@@ -69,6 +72,7 @@ impl FileCreateArgs {
             attributes,
             options,
             desired_access: FileAccessMask::new().with_generic_all(true),
+            share_access: ShareAccessFlags::new(),
         }
     }
 
@@ -81,6 +85,7 @@ impl FileCreateArgs {
             desired_access: FileAccessMask::new()
                 .with_generic_read(true)
                 .with_generic_write(true),
+            share_access: ShareAccessFlags::new(),
         }
     }
 }
@@ -102,15 +107,6 @@ impl Resource {
         share_type: ShareType,
         is_dfs: bool,
     ) -> crate::Result<Resource> {
-        let share_access = if share_type == ShareType::Disk {
-            ShareAccessFlags::new()
-                .with_read(true)
-                .with_write(true)
-                .with_delete(true)
-        } else {
-            ShareAccessFlags::new()
-        };
-
         if share_type == ShareType::Print && create_args.disposition != CreateDisposition::Create {
             return Err(Error::InvalidArgument(
                 "Printer can only accept CreateDisposition::Create.".to_string(),
@@ -129,7 +125,7 @@ impl Resource {
                 impersonation_level: ImpersonationLevel::Impersonation,
                 desired_access: create_args.desired_access,
                 file_attributes: create_args.attributes,
-                share_access,
+                share_access: create_args.share_access,
                 create_disposition: create_args.disposition,
                 create_options: create_args.options,
                 name: name.into(),
