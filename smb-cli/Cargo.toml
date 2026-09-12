@@ -1,7 +1,6 @@
 [package]
 name = "smb-cli"
 description = "SMB Command Line Interface using `smb-rs`"
-readme = "README.md"
 publish = false
 version.workspace = true
 edition.workspace = true

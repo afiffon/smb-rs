@@ -1,7 +1,6 @@
 [package]
 name = "smb-dtyp"
 description = "Common data types for `smb-rs`"
-readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

@@ -67,7 +67,7 @@ macro_rules! test_binrw_write {
     (
         $type:ty: $value_expr:expr => $byte_arr_or_hex_stream:tt
     ) => {
-        pastey::paste! {
+        $crate::pastey::paste! {
             #[test]
             fn [<test_ $type:snake _write>]() {
                 let expr_eval = $value_expr;
@@ -83,7 +83,7 @@ macro_rules! test_binrw_write {
     (
         $type:ty => $suffix:ident: $value_expr:expr => $byte_arr_or_hex_stream:tt
     ) => {
-        pastey::paste! {
+        $crate::pastey::paste! {
             #[test]
             fn [<test_ $type:snake _write $suffix:lower>]() {
                 let expr_eval = $value_expr;
@@ -142,7 +142,7 @@ macro_rules! test_binrw_read {
     (
         $type:ty: $value_expr:expr => $byte_arr_or_hex_stream:tt
     ) => {
-        pastey::paste! {
+        $crate::pastey::paste! {
             #[test]
             fn [<test_ $type:snake _read>]() {
                 $crate::binrw_read_and_assert_eq!(
@@ -157,7 +157,7 @@ macro_rules! test_binrw_read {
     (
         $type:ty => $suffix:ident: $value_expr:expr => $byte_arr_or_hex_stream:tt
     ) => {
-        pastey::paste! {
+        $crate::pastey::paste! {
             #[test]
             fn [<test_ $type:snake _read $suffix:lower>]() {
                 $crate::binrw_read_and_assert_eq!(
@@ -202,7 +202,7 @@ macro_rules! test_binrw_read_fail {
         $type:ty:
         $byte_arr_or_hex_stream:tt
     ) => {
-        pastey::paste! {
+        $crate::pastey::paste! {
             #[test]
             fn [<test_ $type:snake _read_fail>]() {
                 use ::binrw::{io::Cursor, prelude::*};

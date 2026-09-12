@@ -93,9 +93,8 @@ where
     /// by calling impl functions, this function's behavior is modified to support both new sessions and binding to existing sessions.
     pub(crate) async fn setup(&mut self) -> crate::Result<Arc<RwLock<SessionAndChannel>>> {
         log::debug!(
-            "Setting up session for user {} (@{}).",
-            self.authenticator.user_name().account_name(),
-            self.authenticator.user_name().domain_name().unwrap_or("")
+            "Setting up session for user {}.",
+            self.authenticator.user_name().inner()
         );
 
         let result = self._setup_loop().await;

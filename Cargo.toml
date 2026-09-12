@@ -7,7 +7,6 @@ edition = "2024"
 rust-version = "1.89.0"
 license = "MIT"
 description = "A Pure Rust SMB Client implementation"
-homepage = "https://github.com/afiffon/smb-rs"
 repository = "https://github.com/afiffon/smb-rs"
 authors = ["Aviv N <avivnaaman04@gmail.com>"]
 keywords = ["smb", "network", "file-sharing", "windows"]
