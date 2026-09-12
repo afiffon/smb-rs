@@ -1,7 +1,6 @@
 [package]
 name = "smb-dtyp-derive"
 description = "Derive macros for smb-dtyp, and general smb* crates."
-readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

@@ -1,6 +1,5 @@
 [package]
 name = "smb-msg"
-readme = "README.md"
 description = "SMB Messages and structures for `smb-rs`"
 version.workspace = true
 edition.workspace = true

@@ -12,9 +12,9 @@ use binrw::{
 /// and to provide the class type from the file information type.
 pub trait FileInfoType:
     Sized
-    + for<'a> BinRead<Args<'static> = (Self::Class,)>
+    + BinRead<Args<'static> = (Self::Class,)>
     + ReadEndian
-    + for<'a> BinWrite<Args<'static> = ()>
+    + BinWrite<Args<'static> = ()>
     + WriteEndian
     + std::fmt::Debug
 {

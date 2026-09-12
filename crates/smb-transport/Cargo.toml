@@ -1,7 +1,6 @@
 [package]
 name = "smb-transport"
 description = "SMB Transport implementations for `smb-rs`"
-readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -12,7 +11,7 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-smb-dtyp = { workspace = true }
+smb-dtyp = { workspace = true, optional = true }
 smb-msg = { workspace = true, optional = true }
 
 log = { workspace = true }
@@ -38,9 +37,7 @@ rustls-platform-verifier = { workspace = true, default-features = false, optiona
 # ], optional = true }
 
 binrw = { workspace = true }
-modular-bitfield = { workspace = true }
-time = { workspace = true }
-pastey = { workspace = true }
+modular-bitfield = { workspace = true, optional = true }
 maybe-async = { workspace = true }
 thiserror = { workspace = true }
 
@@ -49,9 +46,9 @@ smb-tests = { workspace = true }
 
 [features]
 default = ["async", "netbios-transport"]
-async = ["tokio", "tokio-util", "futures-core", "futures-util"]
+async = ["tokio", "futures-core", "futures-util"]
 is_sync = ["maybe-async/is_sync"]
 
 netbios-transport = []
 quic = ["dep:quinn", "dep:rustls", "dep:rustls-platform-verifier"]
-rdma = ["dep:smb-msg"]                                             # , "dep:async-rdma"]
+rdma = ["dep:smb-msg", "dep:smb-dtyp", "dep:tokio-util", "dep:modular-bitfield"] # , "dep:async-rdma"]
