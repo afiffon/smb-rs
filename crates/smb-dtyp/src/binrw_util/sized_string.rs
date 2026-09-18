@@ -92,17 +92,11 @@ where
         endian: Endian,
         args: Self::Args<'_>,
     ) -> BinResult<Self> {
+        // A size of zero is a legal, explicit "empty string" rather than a
+        // missing argument: [SizedStringSize] has no unset variant. Several
+        // messages carry one - an SMB2 CREATE whose NameLength is 0 is how a
+        // client opens the root of a share (MS-SMB2 2.2.13).
         let size_to_use = args.size.get_size_bytes::<T>()?;
-        if size_to_use == 0 {
-            return Err(binrw::Error::Custom {
-                pos: reader.stream_position()?,
-                err: Box::new(format!(
-                    "BaseSizedString<{}> had invalid read arguments {:?} - all None or zero",
-                    std::any::type_name::<T>(),
-                    args
-                )),
-            });
-        }
 
         let size_chars = size_to_use / Self::CHAR_WIDTH;
 
@@ -290,6 +284,37 @@ pub(crate) fn display_utf16<Transformer: Fn(char) -> O, O: Iterator<Item = char>
 }
 
 mod tests {
+    /// A zero-length string is legal on the wire. An SMB2 CREATE with
+    /// NameLength 0 - how a client opens the root of a share - is the common
+    /// case, and it used to fail to parse.
+    #[test]
+    fn reads_an_empty_string() {
+        use super::*;
+        use binrw::io::Cursor;
+
+        let mut empty = Cursor::new(Vec::new());
+        let read = SizedWideString::read_le_args(
+            &mut empty,
+            BaseSizedStringReadArgs {
+                size: SizedStringSize::bytes(0),
+            },
+        )
+        .expect("a zero-length string is not an error");
+        assert_eq!(read.to_string(), "");
+        assert_eq!(read.size(), 0);
+
+        // Reading it must not consume anything that follows.
+        let mut stream = Cursor::new(b"\xff\xff".to_vec());
+        SizedWideString::read_le_args(
+            &mut stream,
+            BaseSizedStringReadArgs {
+                size: SizedStringSize::bytes(0),
+            },
+        )
+        .expect("a zero-length string is not an error");
+        assert_eq!(stream.position(), 0);
+    }
+
     macro_rules! make_sized_string_tests {
         ($name:ident, $type:ty) => {
             #[test]
