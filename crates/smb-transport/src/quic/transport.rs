@@ -62,9 +62,13 @@ impl QuicTransport {
         if CRYPTO_PROVIDER_INSTALLED.swap(true, std::sync::atomic::Ordering::SeqCst) {
             return;
         }
-        rustls::crypto::ring::default_provider()
-            .install_default()
-            .expect("Failed to install rustls crypto provider");
+        // A process-level provider can only be installed once, and something
+        // else may have got there first: any other library using rustls
+        // installs one, and rustls itself installs the crate-feature default
+        // the first time a config is built. That is not an error - it just
+        // means there is already a provider to use - so the result is ignored
+        // rather than unwrapped.
+        let _ = rustls::crypto::ring::default_provider().install_default();
     }
 
     fn make_client_config(quic_config: &QuicConfig) -> Result<quinn::ClientConfig> {
