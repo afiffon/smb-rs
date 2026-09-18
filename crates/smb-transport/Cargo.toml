@@ -30,6 +30,7 @@ futures-util = { workspace = true, optional = true }
 quinn = { workspace = true, optional = true }
 rustls = { workspace = true, default-features = false, optional = true }
 rustls-platform-verifier = { workspace = true, default-features = false, optional = true }
+sha2 = { version = "0.11.0-rc.2", optional = true }
 
 # RDMA
 # async-rdma = { git = "https://github.com/afiffon/async-rdma.git", rev = "878828dd", features = [
@@ -46,6 +47,8 @@ thiserror = { workspace = true }
 
 [dev-dependencies]
 smb-tests = { workspace = true }
+rcgen = "0.14"
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time"] }
 
 [features]
 default = ["async", "netbios-transport"]
@@ -53,5 +56,5 @@ async = ["tokio", "tokio-util", "futures-core", "futures-util"]
 is_sync = ["maybe-async/is_sync"]
 
 netbios-transport = []
-quic = ["dep:quinn", "dep:rustls", "dep:rustls-platform-verifier"]
+quic = ["dep:quinn", "dep:rustls", "dep:rustls-platform-verifier", "dep:sha2"]
 rdma = ["dep:smb-msg"]                                             # , "dep:async-rdma"]

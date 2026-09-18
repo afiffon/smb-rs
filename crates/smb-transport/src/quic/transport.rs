@@ -16,6 +16,8 @@ use std::{
     time::Duration,
 };
 
+use rustls::crypto::CryptoProvider;
+
 use super::error::*;
 use crate::{
     QuicConfig, TransportError,
@@ -72,9 +74,21 @@ impl QuicTransport {
     }
 
     fn make_client_config(quic_config: &QuicConfig) -> Result<quinn::ClientConfig> {
+        // Pinning replaces the whole verifier rather than adding a root, so it
+        // is built separately from the two trust-store based options.
+        if let super::config::QuicCertValidationOptions::PinnedFingerprints(fingerprints) =
+            &quic_config.cert_validation
+        {
+            return Self::make_pinned_client_config(fingerprints);
+        }
+
         let mut quic_client_config = match &quic_config.cert_validation {
             super::config::QuicCertValidationOptions::PlatformVerifier => {
                 rustls::ClientConfig::with_platform_verifier()?
+            }
+            // Handled above: pinning replaces the verifier entirely.
+            super::config::QuicCertValidationOptions::PinnedFingerprints(_) => {
+                unreachable!("pinned fingerprints take the dedicated path above")
             }
             super::config::QuicCertValidationOptions::CustomRootCerts(items) => {
                 let mut roots = rustls::RootCertStore::empty();
@@ -97,6 +111,39 @@ impl QuicTransport {
             }
         };
         quic_client_config.alpn_protocols = vec![b"smb".to_vec()];
+        Ok(quinn::ClientConfig::new(Arc::new(
+            QuicClientConfig::try_from(quic_client_config)?,
+        )))
+    }
+
+    /// A client config that trusts exactly the pinned certificates.
+    fn make_pinned_client_config(fingerprints: &[String]) -> Result<quinn::ClientConfig> {
+        let parsed = fingerprints
+            .iter()
+            .map(|f| super::fingerprint::parse(f))
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(QuicError::InvalidFingerprint)?;
+
+        if parsed.is_empty() {
+            return Err(QuicError::InvalidFingerprint(
+                "no fingerprints were given to pin".to_string(),
+            ));
+        }
+
+        // The process-wide default is installed by `_init_crypto_provider`.
+        let provider = CryptoProvider::get_default()
+            .cloned()
+            .unwrap_or_else(|| Arc::new(rustls::crypto::ring::default_provider()));
+
+        let verifier = super::fingerprint::PinnedFingerprintVerifier::new(parsed, provider.clone());
+
+        let mut quic_client_config = rustls::ClientConfig::builder_with_provider(provider)
+            .with_safe_default_protocol_versions()?
+            .dangerous()
+            .with_custom_certificate_verifier(Arc::new(verifier))
+            .with_no_client_auth();
+        quic_client_config.alpn_protocols = vec![b"smb".to_vec()];
+
         Ok(quinn::ClientConfig::new(Arc::new(
             QuicClientConfig::try_from(quic_client_config)?,
         )))
