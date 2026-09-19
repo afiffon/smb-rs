@@ -24,6 +24,58 @@ impl Pipe {
     {
         PipeRpcConnection::bind::<I>(self).await
     }
+
+    /// Write raw bytes to the pipe in a single SMB2 WRITE, returning the number
+    /// of bytes the server accepted.
+    ///
+    /// This, together with [`Pipe::read`], lets a caller drive a DCE/RPC dialog
+    /// that spans several fragments: the response to a request larger than the
+    /// negotiated fragment size arrives as several PDUs, and only the first is
+    /// returned by an `FSCTL_PIPE_TRANSCEIVE`. The rest are pulled with
+    /// [`Pipe::read`]. The built-in RPC client ([`PipeRpcConnection`]) does not
+    /// reassemble, so a caller that needs to must go through these two methods.
+    pub async fn write(&self, data: &[u8]) -> crate::Result<usize> {
+        const PIPE_OFFSET: u64 = 0;
+        let file_id = self.handle.file_id()?;
+        let write_result = self
+            .handle
+            .sendo_recvo(
+                OutgoingMessage::new(
+                    WriteRequest::new(PIPE_OFFSET, file_id, Default::default(), data.len() as u32)
+                        .into(),
+                )
+                .with_additional_data(Arc::from(data.to_vec())),
+                ReceiveOptions::new().with_allow_async(true),
+            )
+            .await?;
+        Ok(write_result.message.content.to_write()?.count as usize)
+    }
+
+    /// Read up to `buf.len()` raw bytes from the pipe in a single SMB2 READ,
+    /// returning the number of bytes read. See [`Pipe::write`] for why an
+    /// external RPC layer needs this.
+    pub async fn read(&self, buf: &mut [u8]) -> crate::Result<usize> {
+        const PIPE_OFFSET: u64 = 0;
+        let file_id = self.handle.file_id()?;
+        let read_result = self
+            .handle
+            .send_recvo(
+                ReadRequest {
+                    flags: Default::default(),
+                    length: buf.len() as u32,
+                    offset: PIPE_OFFSET,
+                    file_id,
+                    minimum_count: 1,
+                }
+                .into(),
+                ReceiveOptions::new().with_allow_async(true),
+            )
+            .await?;
+        let content = read_result.message.content.to_read()?;
+        let n = content.buffer.len().min(buf.len());
+        buf[..n].copy_from_slice(&content.buffer[..n]);
+        Ok(n)
+    }
 }
 
 pub struct PipeRpcConnection {
