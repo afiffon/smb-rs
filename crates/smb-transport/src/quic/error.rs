@@ -16,6 +16,8 @@ pub enum QuicError {
     IoError(#[from] std::io::Error),
     #[error("TLS error: {0}")]
     TlsError(#[from] rustls::Error),
+    #[error("invalid certificate fingerprint: {0}")]
+    InvalidFingerprint(String),
     #[error("No cipher suites found")]
     NoCipherSuitesFound(#[from] quinn::crypto::rustls::NoInitialCipherSuite),
 }
