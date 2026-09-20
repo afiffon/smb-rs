@@ -2721,7 +2721,7 @@ checksum = "ba467056f1b547ed52077911161fc86985becbc60e8e1857c8a144dab0def891"
 
 [[package]]
 name = "smb"
-version = "0.11.2"
+version = "0.12.0"
 dependencies = [
  "aead",
  "aes",
@@ -2763,7 +2763,7 @@ dependencies = [
 
 [[package]]
 name = "smb-cli"
-version = "0.11.2"
+version = "0.12.0"
 dependencies = [
  "clap",
  "ctrlc",
@@ -2779,7 +2779,7 @@ dependencies = [
 
 [[package]]
 name = "smb-dtyp"
-version = "0.11.2"
+version = "0.12.0"
 dependencies = [
  "binrw",
  "modular-bitfield",
@@ -2792,7 +2792,7 @@ dependencies = [
 
 [[package]]
 name = "smb-dtyp-derive"
-version = "0.11.2"
+version = "0.12.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2801,7 +2801,7 @@ dependencies = [
 
 [[package]]
 name = "smb-fscc"
-version = "0.11.2"
+version = "0.12.0"
 dependencies = [
  "binrw",
  "const_format",
@@ -2815,7 +2815,7 @@ dependencies = [
 
 [[package]]
 name = "smb-msg"
-version = "0.11.2"
+version = "0.12.0"
 dependencies = [
  "binrw",
  "const_format",
@@ -2831,7 +2831,7 @@ dependencies = [
 
 [[package]]
 name = "smb-msg-derive"
-version = "0.11.2"
+version = "0.12.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2840,7 +2840,7 @@ dependencies = [
 
 [[package]]
 name = "smb-rpc"
-version = "0.11.2"
+version = "0.12.0"
 dependencies = [
  "binrw",
  "maybe-async",
@@ -2854,7 +2854,7 @@ dependencies = [
 
 [[package]]
 name = "smb-tests"
-version = "0.11.2"
+version = "0.12.0"
 dependencies = [
  "hex",
  "pastey",
@@ -2862,7 +2862,7 @@ dependencies = [
 
 [[package]]
 name = "smb-transport"
-version = "0.11.2"
+version = "0.12.0"
 dependencies = [
  "binrw",
  "futures-core",
