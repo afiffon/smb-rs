@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::Error;
 use crate::connection::AuthMethodsConfig;
 use crate::connection::connection_info::ConnectionInfo;
-use maybe_async::*;
+use maybe_async::maybe_async;
 use sspi::{
     AcquireCredentialsHandleResult, AuthIdentity, BufferType, ClientRequestFlags, CredentialUse,
     DataRepresentation, InitializeSecurityContextResult, Negotiate, SecurityBuffer, Sspi,
@@ -59,16 +59,32 @@ impl Authenticator {
     }
 
     pub fn is_authenticated(&self) -> crate::Result<bool> {
-        if self.current_state.is_none() {
-            return Ok(false);
+        match self.current_state.as_ref().map(|state| state.status) {
+            None | Some(sspi::SecurityStatus::ContinueNeeded) => Ok(false),
+            Some(sspi::SecurityStatus::Ok) => Ok(true),
+            Some(status) => Err(Error::InvalidState(format!(
+                "Unexpected SSPI authentication status: {status:?}."
+            ))),
         }
-        Ok(self.current_state.as_ref().unwrap().status == sspi::SecurityStatus::Ok)
+    }
+
+    pub fn has_session_key(&self) -> crate::Result<bool> {
+        match self.ssp.query_context_session_key() {
+            Ok(key) if key.session_key.as_ref().len() >= 16 => Ok(true),
+            Ok(_) => Err(Error::InvalidState(
+                "SSPI session key is shorter than 16 bytes.".into(),
+            )),
+            Err(error) if error.error_type == sspi::ErrorKind::OutOfSequence => Ok(false),
+            Err(error) => Err(error.into()),
+        }
     }
 
     pub fn session_key(&self) -> crate::Result<[u8; 16]> {
         // Use the first 16 bytes of the session key.
         let key_info = self.ssp.query_context_session_key()?;
-        let k = &key_info.session_key.as_ref()[..16];
+        let k = key_info.session_key.as_ref().get(..16).ok_or_else(|| {
+            Error::InvalidState("SSPI session key is shorter than 16 bytes.".into())
+        })?;
         Ok(k.try_into().unwrap())
     }
 
@@ -90,14 +106,6 @@ impl Authenticator {
     pub async fn next(&mut self, gss_token: &[u8]) -> crate::Result<Vec<u8>> {
         if self.is_authenticated()? {
             return Err(Error::InvalidState("Authentication already done.".into()));
-        }
-
-        if self.current_state.is_some()
-            && self.current_state.as_ref().unwrap().status != sspi::SecurityStatus::ContinueNeeded
-        {
-            return Err(Error::InvalidState(
-                "NTLM GSS session is not in a state to process next token.".into(),
-            ));
         }
 
         let mut output_buffer = vec![SecurityBuffer::new(Vec::new(), BufferType::Token)];
@@ -147,7 +155,10 @@ impl Authenticator {
             }
         };
 
+        log::debug!("SSPI authentication step: {:?}", result.status);
         self.current_state = Some(result);
+        // Reject unsupported SSPI statuses before an output token can be sent.
+        self.is_authenticated()?;
 
         let output_buffer = output_buffer
             .pop()
@@ -189,5 +200,121 @@ impl Authenticator {
         };
         let ntlm_config = if config.ntlm { "ntlm" } else { "!ntlm" };
         format!("{ntlm_config},{krb_pku2u_config}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sspi::{Credentials, ErrorKind, SecurityStatus, ServerRequestFlags};
+
+    // Exercise the real SSPI client/server state machines with the same request
+    // flags as SMB, without requiring a Samba server or storing captured tokens.
+    #[maybe_async::maybe_async]
+    async fn check_final_spnego_token(corrupt_mic: bool, omit_mic: bool) {
+        let identity = AuthIdentity {
+            username: Username::parse("test_user@example.com").unwrap(),
+            password: "test_password".to_string().into(),
+        };
+        let config = || {
+            NegotiateConfig::new(
+                Box::new(NtlmConfig::default()),
+                Some("ntlm,!kerberos,!pku2u".into()),
+                "smb-rs".into(),
+            )
+        };
+        let credentials = Credentials::AuthIdentity(identity.clone());
+        let mut ssp = Negotiate::new_client(config()).unwrap();
+        let cred_handle = ssp
+            .acquire_credentials_handle()
+            .with_credential_use(CredentialUse::Outbound)
+            .with_auth_data(&credentials)
+            .execute(&mut ssp)
+            .unwrap();
+        let mut client = Authenticator {
+            server_hostname: "127.0.0.1".into(),
+            user_name: identity.username.clone(),
+            ssp,
+            cred_handle,
+            current_state: None,
+        };
+        let mut server = Negotiate::new_server(config(), vec![identity]).unwrap();
+        let mut server_credentials = server
+            .acquire_credentials_handle()
+            .with_credential_use(CredentialUse::Inbound)
+            .with_auth_data(&credentials)
+            .execute(&mut server)
+            .unwrap();
+        let mut server_step = |token: Vec<u8>| {
+            let mut input = [SecurityBuffer::new(token, BufferType::Token)];
+            let mut output = [SecurityBuffer::new(Vec::new(), BufferType::Token)];
+            let builder = server
+                .accept_security_context()
+                .with_credentials_handle(&mut server_credentials.credentials_handle)
+                .with_context_requirements(ServerRequestFlags::empty())
+                .with_target_data_representation(DataRepresentation::Native)
+                .with_input(&mut input)
+                .with_output(&mut output);
+            let result = server
+                .accept_security_context_impl(builder)
+                .unwrap()
+                .resolve_to_result()
+                .unwrap();
+            (result.status, std::mem::take(&mut output[0].buffer))
+        };
+
+        let negotiate = client.next(&[]).await.unwrap();
+        assert!(!client.has_session_key().unwrap());
+        assert!(!client.is_authenticated().unwrap());
+        let (status, challenge) = server_step(negotiate);
+        assert_eq!(status, SecurityStatus::ContinueNeeded);
+
+        let authenticate = client.next(&challenge).await.unwrap();
+        assert!(!authenticate.is_empty());
+        assert!(client.has_session_key().unwrap());
+        assert!(!client.is_authenticated().unwrap());
+        assert_eq!(
+            client.current_state.as_ref().unwrap().status,
+            SecurityStatus::ContinueNeeded
+        );
+        let key_before_final_token = client.session_key().unwrap();
+        let (status, mut final_token) = server_step(authenticate);
+        assert_eq!(status, SecurityStatus::Ok);
+        assert!(!final_token.is_empty());
+
+        if corrupt_mic {
+            // The final field is the MIC OCTET STRING; change its last byte,
+            // preserving the DER structure so this tests signature verification.
+            *final_token.last_mut().unwrap() ^= 1;
+        } else if omit_mic {
+            // NegTokenResp containing only negState = accept-completed.
+            final_token = vec![0xa1, 7, 0x30, 5, 0xa0, 3, 0x0a, 1, 0];
+        }
+        let result = client.next(&final_token).await;
+        if corrupt_mic {
+            assert!(
+                matches!(result, Err(Error::SspiError(error)) if error.error_type == ErrorKind::MessageAltered)
+            );
+            assert!(!client.is_authenticated().unwrap());
+        } else {
+            assert!(result.unwrap().is_empty());
+            assert_eq!(client.is_authenticated().unwrap(), !omit_mic);
+            assert_eq!(client.session_key().unwrap(), key_before_final_token);
+        }
+    }
+
+    #[maybe_async::test(not(feature = "async"), async(feature = "async", tokio::test))]
+    async fn session_key_precedes_spnego_completion() {
+        check_final_spnego_token(false, false).await;
+    }
+
+    #[maybe_async::test(not(feature = "async"), async(feature = "async", tokio::test))]
+    async fn final_spnego_mic_is_verified() {
+        check_final_spnego_token(true, false).await;
+    }
+
+    #[maybe_async::test(not(feature = "async"), async(feature = "async", tokio::test))]
+    async fn missing_final_spnego_mic_does_not_complete_authentication() {
+        check_final_spnego_token(false, true).await;
     }
 }
