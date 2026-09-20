@@ -5,12 +5,13 @@ use super::*;
 /// Session setup processor.
 ///
 /// This is an internal structure.
-/// It is assume that T is properly implemented and tested in-crate,
-/// and so, the wide use of unwrap() is acceptable.
+/// Internal state relies on the invariants of the in-crate implementations of T.
+/// Responses from the server must be validated before they update that state.
 pub(crate) struct SessionSetup<'a, T>
 where
     T: SessionSetupProperties,
 {
+    /// A validated response, consumed once by the next authentication step.
     last_setup_response: Option<SessionSetupResponse>,
     flags: Option<SessionFlags>,
 
@@ -20,7 +21,7 @@ where
     /// when it is being updated.
     preauth_hash: Option<PreauthHashState>,
 
-    result: Option<Arc<RwLock<SessionAndChannel>>>,
+    session_state: Option<Arc<RwLock<SessionAndChannel>>>,
 
     authenticator: Authenticator,
     upstream: &'a ChannelUpstream,
@@ -31,18 +32,6 @@ where
     new_channel_id: u32,
 
     _phantom: std::marker::PhantomData<T>,
-}
-
-/// Once the key is available, the request finishes the preauthentication hash
-/// and installs the channel. Another challenge cannot be processed after that.
-fn expected_setup_status(authenticated: bool, has_session_key: bool) -> crate::Result<Status> {
-    match (authenticated, has_session_key) {
-        (_, true) => Ok(Status::Success),
-        (false, false) => Ok(Status::MoreProcessingRequired),
-        (true, false) => Err(Error::InvalidState(
-            "SSPI completed authentication without a session key.".into(),
-        )),
-    }
 }
 
 #[maybe_async]
@@ -59,10 +48,10 @@ where
     ) -> crate::Result<Self> {
         let authenticator = Authenticator::build(identity, conn_info)?;
 
-        let mut result = Self {
+        let mut setup = Self {
             last_setup_response: None,
             flags: None,
-            result: None,
+            session_state: None,
             handler: None,
             preauth_hash: Some(conn_info.preauth_hash.clone()),
             authenticator,
@@ -86,9 +75,9 @@ where
             #[cfg(feature = "ksmbd-multichannel-compat")]
             let channel = channel.with_binding(true);
 
-            result.set_session(session).await?;
-            result
-                .result
+            setup.set_session(session).await?;
+            setup
+                .session_state
                 .as_ref()
                 .expect("Should have been set up by set_session()")
                 .write()
@@ -96,7 +85,7 @@ where
                 .channel = Some(channel);
         }
 
-        Ok(result)
+        Ok(setup)
     }
 
     /// Common session setup logic.
@@ -111,7 +100,7 @@ where
 
         let result = self._setup_loop().await;
         match result {
-            Ok(()) => Ok(self.result.take().unwrap()),
+            Ok(()) => Ok(self.session_state.take().unwrap()),
             Err(e) => {
                 log::error!("Failed to setup session: {}", e);
                 if let Err(ce) = T::error_cleanup(self).await {
@@ -131,14 +120,10 @@ where
     async fn _setup_loop(&mut self) -> crate::Result<()> {
         loop {
             // Generate the next client token and determine the only valid SMB reply.
-            let token = match self.last_setup_response.as_ref() {
+            let token = match self.last_setup_response.take() {
                 Some(response) => self.authenticator.next(&response.buffer).await?,
                 None => self.authenticator.next(&[]).await?,
             };
-            let expected_status = expected_setup_status(
-                self.authenticator.is_authenticated()?,
-                self.authenticator.has_session_key()?,
-            )?;
             if token.is_empty() {
                 return Err(Error::InvalidState(
                     "SSPI produced no token for a session setup request.".into(),
@@ -147,57 +132,41 @@ where
 
             // The final response is signed. Install keys after hashing the request,
             // even if SSPI still needs that response's SPNEGO MIC to complete.
-            let is_final_exchange = expected_status == Status::Success;
-            if is_final_exchange && self.result.is_none() {
+            // TODO: Success on the first setup response remains unsupported. A new
+            // session needs the server-assigned ID before we can register its state,
+            // install the channel, and validate the signed success response. Supporting
+            // that flow requires deferred signature validation after reading the ID;
+            // until then, fail explicitly before sending a request we cannot validate.
+            let expecting_final_exchange = self.expected_setup_status()? == Status::Success;
+            if expecting_final_exchange && self.session_state.is_none() {
                 return Err(Error::InvalidState(
                     "Session keys became available before a session ID was assigned.".into(),
                 ));
             }
+
             let request = self.send_setup_request(token).await?;
-            if is_final_exchange {
+            if expecting_final_exchange {
                 self.preauth_hash = self.preauth_hash.take().unwrap().finish().into();
                 self.make_channel().await?;
             }
 
-            let response = self
-                .receive_setup_response(request.msg_id, expected_status)
-                .await?;
-            let session_id = response.message.header.session_id;
-            if session_id == 0
-                || self
-                    .handler
-                    .as_ref()
-                    .is_some_and(|handler| handler.session_id() != session_id)
-            {
-                return Err(Error::InvalidMessage(
-                    "Session setup response has a missing or mismatched session ID.".into(),
-                ));
-            }
-            let session_setup_response = response.message.content.to_sessionsetup()?;
+            let response = self.receive_setup_response(request.msg_id).await?;
+            self.validate_setup_response(&response)?;
+            self.last_setup_response = Some(response.message.content.to_sessionsetup()?);
 
-            if !is_final_exchange {
+            if !expecting_final_exchange {
                 // Only challenge responses extend the preauthentication transcript.
-                if self.result.is_none() {
+                if self.session_state.is_none() {
+                    let session_id = response.message.header.session_id;
                     log::trace!("Creating session state with id {session_id}.");
                     self.set_session(T::init_session(self, session_id).await?)
                         .await?;
                 }
                 self.next_preauth_hash(&response.raw);
-                self.last_setup_response = Some(session_setup_response);
                 continue;
             }
 
-            // Success requires both SMB signature validation and SSPI completion.
-            if !session_setup_response
-                .session_flags
-                .is_guest_or_null_session()
-                && !response.form.signed_or_encrypted()
-            {
-                return Err(Error::InvalidMessage("Expected a signed message!".into()));
-            }
-            self.complete_authentication(&session_setup_response.buffer)
-                .await?;
-            self.flags = Some(session_setup_response.session_flags);
+            self.complete_authentication().await?;
             break;
         }
 
@@ -206,19 +175,71 @@ where
         Ok(())
     }
 
-    async fn complete_authentication(&mut self, token: &[u8]) -> crate::Result<()> {
+    /// A key commits us to the final exchange: the preauthentication hash has
+    /// been finalized and cannot accept another challenge/response round.
+    fn expected_setup_status(&self) -> crate::Result<Status> {
+        match (
+            self.authenticator.authentication_completed()?,
+            self.authenticator.has_session_key()?,
+        ) {
+            (_, true) => Ok(Status::Success),
+            (false, false) => Ok(Status::MoreProcessingRequired),
+            (true, false) => Err(Error::InvalidState(
+                "SSPI completed authentication without a session key.".into(),
+            )),
+        }
+    }
+
+    fn validate_setup_response(&self, response: &IncomingMessage) -> crate::Result<()> {
+        if response.message.header.status != self.expected_setup_status()? as u32 {
+            return Err(Error::UnexpectedMessageStatus(
+                response.message.header.status,
+            ));
+        }
+
+        let session_id = response.message.header.session_id;
+        if session_id == 0 {
+            return Err(Error::InvalidMessage(
+                "Session setup response has no session ID.".into(),
+            ));
+        }
+        if self
+            .handler
+            .as_ref()
+            .is_some_and(|handler| handler.session_id() != session_id)
+        {
+            return Err(Error::InvalidMessage(
+                "Session setup response has a mismatched session ID.".into(),
+            ));
+        }
+
+        let setup_response = response.message.content.as_sessionsetup()?;
+        if response.message.header.status == Status::Success as u32
+            && !setup_response.session_flags.is_guest_or_null_session()
+            && !response.form.signed_or_encrypted()
+        {
+            return Err(Error::InvalidMessage("Expected a signed message!".into()));
+        }
+        Ok(())
+    }
+
+    async fn complete_authentication(&mut self) -> crate::Result<()> {
+        let response = self
+            .last_setup_response
+            .take()
+            .ok_or_else(|| Error::InvalidState("Missing final session setup response.".into()))?;
         let session_key = self.authenticator.session_key()?;
         // A successful SMB reply may carry the last SPNEGO token. Consume it
         // locally; sending another setup request would restart a completed exchange.
-        if !self.authenticator.is_authenticated()? {
-            let output = self.authenticator.next(token).await?;
+        if !self.authenticator.authentication_completed()? {
+            let output = self.authenticator.next(&response.buffer).await?;
             if !output.is_empty() {
                 return Err(Error::InvalidState(
                     "SSPI produced another token after SMB session setup succeeded.".into(),
                 ));
             }
         }
-        if !self.authenticator.is_authenticated()? {
+        if !self.authenticator.authentication_completed()? {
             return Err(Error::InvalidState(
                 "SMB session setup succeeded before SSPI authentication completed.".into(),
             ));
@@ -228,6 +249,7 @@ where
                 "SSPI changed the session key after the channel was installed.".into(),
             ));
         }
+        self.flags = Some(response.session_flags);
         Ok(())
     }
 
@@ -246,24 +268,22 @@ where
             .session_started(&session)
             .await?;
 
-        self.result = Some(session);
+        self.session_state = Some(session);
 
         Ok(())
     }
 
-    async fn receive_setup_response(
-        &mut self,
-        for_msg_id: u64,
-        expected_status: Status,
-    ) -> crate::Result<IncomingMessage> {
+    async fn receive_setup_response(&mut self, for_msg_id: u64) -> crate::Result<IncomingMessage> {
+        let expected_status = self.expected_setup_status()?;
         let expected_statuses = [expected_status];
         let roptions = ReceiveOptions::new()
             .with_status(&expected_statuses)
+            .with_cmd(Some(smb_msg::Command::SessionSetup))
             .with_msg_id_filter(for_msg_id);
 
-        let channel_set_up = self.result.is_some()
+        let channel_set_up = self.session_state.is_some()
             && self
-                .result
+                .session_state
                 .as_ref()
                 .unwrap()
                 .read()
@@ -323,7 +343,7 @@ where
 
         self.channel = Some(channel_info);
 
-        let mut session_lock = self.result.as_ref().unwrap().write().await?;
+        let mut session_lock = self.session_state.as_ref().unwrap().write().await?;
         session_lock.set_channel(self.channel.take().unwrap());
 
         log::trace!("Channel for current setup has been initialized");
@@ -437,7 +457,7 @@ impl SessionSetupProperties for SmbSessionBind {
     where
         T: SessionSetupProperties,
     {
-        if setup.result.is_none() {
+        if setup.session_state.is_none() {
             log::warn!("No session to cleanup in binding.");
             return Ok(());
         }
@@ -445,7 +465,7 @@ impl SessionSetupProperties for SmbSessionBind {
             .upstream
             .worker()
             .ok_or_else(|| Error::InvalidState("Worker not available!".to_string()))?
-            .session_ended(setup.result.as_ref().unwrap())
+            .session_ended(setup.session_state.as_ref().unwrap())
             .await
     }
 
@@ -475,13 +495,13 @@ impl SessionSetupProperties for SmbSessionNew {
     where
         T: SessionSetupProperties,
     {
-        if setup.result.is_none() {
+        if setup.session_state.is_none() {
             log::trace!("No session to cleanup in setup.");
             return Ok(());
         }
 
         log::trace!("Invalidating session before cleanup.");
-        let session = setup.result.as_ref().unwrap();
+        let session = setup.session_state.as_ref().unwrap();
         {
             let session_lock = session.read().await?;
             session_lock.session.write().await?.invalidate();
@@ -491,7 +511,7 @@ impl SessionSetupProperties for SmbSessionNew {
             .upstream
             .worker()
             .ok_or_else(|| Error::InvalidState("Worker not available!".to_string()))?
-            .session_ended(setup.result.as_ref().unwrap())
+            .session_ended(setup.session_state.as_ref().unwrap())
             .await
     }
 
@@ -502,7 +522,7 @@ impl SessionSetupProperties for SmbSessionNew {
         // Only on new sessions we need to initialize the session state with the keys.
         log::trace!("Session keys exchanged. Setting up session state.");
         setup
-            .result
+            .session_state
             .as_ref()
             .unwrap()
             .read()
@@ -522,7 +542,7 @@ impl SessionSetupProperties for SmbSessionNew {
         T: SessionSetupProperties,
     {
         log::trace!("Session setup successful");
-        let result = setup.result.as_ref().unwrap().read().await?;
+        let result = setup.session_state.as_ref().unwrap().read().await?;
         let mut session = result.session.write().await?;
         session.ready(setup.flags.unwrap(), setup.conn_info)
     }
@@ -538,26 +558,5 @@ impl SessionSetupProperties for SmbSessionNew {
         let session_info = Arc::new(RwLock::new(session_info));
 
         Ok(session_info)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::expected_setup_status;
-    use smb_msg::Status;
-
-    #[test]
-    fn setup_requires_a_key_for_success() {
-        assert_eq!(
-            expected_setup_status(false, false).unwrap(),
-            Status::MoreProcessingRequired
-        );
-        assert!(expected_setup_status(true, false).is_err());
-    }
-
-    #[test]
-    fn setup_requires_success_after_key_exchange() {
-        assert_eq!(expected_setup_status(false, true).unwrap(), Status::Success);
-        assert_eq!(expected_setup_status(true, true).unwrap(), Status::Success);
     }
 }

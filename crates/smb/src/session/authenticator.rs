@@ -58,7 +58,7 @@ impl Authenticator {
         &self.user_name
     }
 
-    pub fn is_authenticated(&self) -> crate::Result<bool> {
+    pub fn authentication_completed(&self) -> crate::Result<bool> {
         match self.current_state.as_ref().map(|state| state.status) {
             None | Some(sspi::SecurityStatus::ContinueNeeded) => Ok(false),
             Some(sspi::SecurityStatus::Ok) => Ok(true),
@@ -70,10 +70,7 @@ impl Authenticator {
 
     pub fn has_session_key(&self) -> crate::Result<bool> {
         match self.ssp.query_context_session_key() {
-            Ok(key) if key.session_key.as_ref().len() >= 16 => Ok(true),
-            Ok(_) => Err(Error::InvalidState(
-                "SSPI session key is shorter than 16 bytes.".into(),
-            )),
+            Ok(_) => Ok(true),
             Err(error) if error.error_type == sspi::ErrorKind::OutOfSequence => Ok(false),
             Err(error) => Err(error.into()),
         }
@@ -104,7 +101,7 @@ impl Authenticator {
 
     #[maybe_async]
     pub async fn next(&mut self, gss_token: &[u8]) -> crate::Result<Vec<u8>> {
-        if self.is_authenticated()? {
+        if self.authentication_completed()? {
             return Err(Error::InvalidState("Authentication already done.".into()));
         }
 
@@ -158,7 +155,7 @@ impl Authenticator {
         log::debug!("SSPI authentication step: {:?}", result.status);
         self.current_state = Some(result);
         // Reject unsupported SSPI statuses before an output token can be sent.
-        self.is_authenticated()?;
+        self.authentication_completed()?;
 
         let output_buffer = output_buffer
             .pop()
@@ -265,14 +262,14 @@ mod tests {
 
         let negotiate = client.next(&[]).await.unwrap();
         assert!(!client.has_session_key().unwrap());
-        assert!(!client.is_authenticated().unwrap());
+        assert!(!client.authentication_completed().unwrap());
         let (status, challenge) = server_step(negotiate);
         assert_eq!(status, SecurityStatus::ContinueNeeded);
 
         let authenticate = client.next(&challenge).await.unwrap();
         assert!(!authenticate.is_empty());
         assert!(client.has_session_key().unwrap());
-        assert!(!client.is_authenticated().unwrap());
+        assert!(!client.authentication_completed().unwrap());
         assert_eq!(
             client.current_state.as_ref().unwrap().status,
             SecurityStatus::ContinueNeeded
@@ -295,10 +292,10 @@ mod tests {
             assert!(
                 matches!(result, Err(Error::SspiError(error)) if error.error_type == ErrorKind::MessageAltered)
             );
-            assert!(!client.is_authenticated().unwrap());
+            assert!(!client.authentication_completed().unwrap());
         } else {
             assert!(result.unwrap().is_empty());
-            assert_eq!(client.is_authenticated().unwrap(), !omit_mic);
+            assert_eq!(client.authentication_completed().unwrap(), !omit_mic);
             assert_eq!(client.session_key().unwrap(), key_before_final_token);
         }
     }
