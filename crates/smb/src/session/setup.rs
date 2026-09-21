@@ -2,6 +2,24 @@ use crate::session::authenticator::Authenticator;
 
 use super::*;
 
+enum SetupState {
+    Initial {
+        preauth_hash: PreauthHashState,
+    },
+    InProgress {
+        preauth_hash: PreauthHashState,
+        session: Arc<RwLock<SessionAndChannel>>,
+        handler: ChannelMessageHandler,
+        /// Token returned by the previous setup response and consumed by SSPI
+        /// to produce the next request.
+        input_token: Vec<u8>,
+    },
+    Complete {
+        session: Arc<RwLock<SessionAndChannel>>,
+        flags: SessionFlags,
+    },
+}
+
 /// Session setup processor.
 ///
 /// This is an internal structure.
@@ -11,17 +29,7 @@ pub(crate) struct SessionSetup<'a, T>
 where
     T: SessionSetupProperties,
 {
-    /// A validated response, consumed once by the next authentication step.
-    last_setup_response: Option<SessionSetupResponse>,
-    flags: Option<SessionFlags>,
-
-    handler: Option<ChannelMessageHandler>,
-
-    /// should always be set; this is Option to allow moving it out during setup,
-    /// when it is being updated.
-    preauth_hash: Option<PreauthHashState>,
-
-    session_state: Option<Arc<RwLock<SessionAndChannel>>>,
+    state: SetupState,
 
     authenticator: Authenticator,
     upstream: &'a ChannelUpstream,
@@ -47,11 +55,9 @@ where
         let authenticator = Authenticator::build(identity, conn_info)?;
 
         let mut setup = Self {
-            last_setup_response: None,
-            flags: None,
-            session_state: None,
-            handler: None,
-            preauth_hash: Some(conn_info.preauth_hash.clone()),
+            state: SetupState::Initial {
+                preauth_hash: conn_info.preauth_hash.clone(),
+            },
             authenticator,
             upstream,
             conn_info,
@@ -73,13 +79,7 @@ where
             let channel = channel.with_binding(true);
 
             setup.set_session(session).await?;
-            setup
-                .session_state
-                .as_ref()
-                .expect("Should have been set up by set_session()")
-                .write()
-                .await?
-                .channel = Some(channel);
+            setup.session()?.write().await?.channel = Some(channel);
         }
 
         Ok(setup)
@@ -100,7 +100,7 @@ where
             .await
             .map_err(Error::normalize_authentication_error);
         match result {
-            Ok(()) => Ok(self.session_state.take().unwrap()),
+            Ok(()) => self.completed_session(),
             Err(e) => {
                 log::error!("Failed to setup session: {}", e);
                 if let Err(ce) = T::error_cleanup(self).await {
@@ -120,10 +120,8 @@ where
     async fn _setup_loop(&mut self) -> crate::Result<()> {
         loop {
             // Generate the next client token and determine the only valid SMB reply.
-            let token = match self.last_setup_response.take() {
-                Some(response) => self.authenticator.next(&response.buffer).await?,
-                None => self.authenticator.next(&[]).await?,
-            };
+            let input_token = self.take_input_token()?;
+            let token = self.authenticator.next(&input_token).await?;
             if token.is_empty() {
                 return Err(Error::InvalidState(
                     "SSPI produced no token for a session setup request.".into(),
@@ -136,7 +134,7 @@ where
             if expected_status == Status::Success {
                 // The final request completes the preauthentication transcript used
                 // to derive the key that validates the response.
-                self.preauth_hash = self.preauth_hash.take().unwrap().finish().into();
+                self.finish_preauth_hash()?;
             }
 
             let response = self
@@ -181,8 +179,7 @@ where
             ));
         }
         if self
-            .handler
-            .as_ref()
+            .handler()
             .is_some_and(|handler| handler.session_id() != session_id)
         {
             return Err(Error::InvalidMessage(
@@ -192,13 +189,13 @@ where
 
         if response.message.header.status == Status::MoreProcessingRequired as u32 {
             self.verify_challenge_response(&mut response).await?;
-            if self.session_state.is_none() {
+            if matches!(self.state, SetupState::Initial { .. }) {
                 log::trace!("Creating session state with id {session_id}.");
                 self.set_session(T::init_session(self, session_id).await?)
                     .await?;
             }
-            self.next_preauth_hash(&response.raw);
-            self.last_setup_response = Some(response.message.content.to_sessionsetup()?);
+            self.next_preauth_hash(&response.raw)?;
+            self.set_input_token(response.message.content.to_sessionsetup()?.buffer)?;
             return Ok(false);
         }
 
@@ -221,12 +218,12 @@ where
 
         // A one-round Kerberos exchange has no session state until the signed
         // response has supplied and authenticated the server-assigned ID.
-        if self.session_state.is_none() {
+        if matches!(self.state, SetupState::Initial { .. }) {
             self.set_session(T::init_session(self, session_id).await?)
                 .await?;
         }
         self.install_channel(channel).await?;
-        self.flags = Some(session_flags);
+        self.complete_state(session_flags)?;
 
         Ok(true)
     }
@@ -251,11 +248,14 @@ where
     }
 
     async fn verify_challenge_response(&self, response: &mut IncomingMessage) -> crate::Result<()> {
-        let Some(session_state) = &self.session_state else {
-            return Ok(());
-        };
-
         let (session, channel) = {
+            let SetupState::InProgress {
+                session: session_state,
+                ..
+            } = &self.state
+            else {
+                return Ok(());
+            };
             let session_state = session_state.read().await?;
             let Some(channel) = session_state.channel.clone() else {
                 return Ok(());
@@ -316,21 +316,32 @@ where
     }
 
     async fn set_session(&mut self, session: Arc<RwLock<SessionInfo>>) -> crate::Result<()> {
+        let preauth_hash = match &self.state {
+            SetupState::Initial { preauth_hash } => preauth_hash.clone(),
+            _ => {
+                return Err(Error::InvalidState(
+                    "Session setup already has a registered session.".into(),
+                ));
+            }
+        };
         let session_id = session.read().await?.id();
         let result = SessionAndChannel::new(session_id, session);
         let session = Arc::new(RwLock::new(result));
 
         let setup_handler = ChannelMessageHandler::make_for_setup(&session, self.upstream).await?;
-        self.handler = Some(setup_handler);
 
         self.upstream
             .worker()
-            .ok_or_else(|| Error::InvalidState("Worker not available!".to_string()))
-            .unwrap()
+            .ok_or_else(|| Error::InvalidState("Worker not available!".to_string()))?
             .session_started(&session)
             .await?;
 
-        self.session_state = Some(session);
+        self.state = SetupState::InProgress {
+            preauth_hash,
+            session,
+            handler: setup_handler,
+            input_token: Vec::new(),
+        };
 
         Ok(())
     }
@@ -354,7 +365,7 @@ where
         // Include each request before deriving the keys that validate its response.
         let request = T::make_request(self, buf).await?;
 
-        let send_result = if let Some(handler) = self.handler.as_ref() {
+        let send_result = if let Some(handler) = self.handler() {
             log::trace!("setup loop: sending with channel handler");
             handler.sendo(request).await?
         } else {
@@ -362,7 +373,10 @@ where
             self.upstream.sendo(request).await?
         };
 
-        self.next_preauth_hash(send_result.raw.as_ref().unwrap());
+        let raw = send_result.raw.as_ref().ok_or_else(|| {
+            Error::InvalidState("Session setup request did not retain its raw data.".into())
+        })?;
+        self.next_preauth_hash(raw)?;
         Ok(send_result)
     }
 
@@ -370,7 +384,7 @@ where
         let channel = ChannelInfo::new(
             self.new_channel_id,
             &self.session_key()?,
-            &self.preauth_hash_value(),
+            &self.preauth_hash_value()?,
             self.conn_info,
         )?;
         #[cfg(feature = "ksmbd-multichannel-compat")]
@@ -381,7 +395,7 @@ where
     async fn install_channel(&mut self, channel: ChannelInfo) -> crate::Result<()> {
         T::on_session_key_exchanged(self).await?;
         log::trace!("Session keys are set.");
-        let mut session_lock = self.session_state.as_ref().unwrap().write().await?;
+        let mut session_lock = self.session()?.write().await?;
         session_lock.set_channel(channel);
 
         log::trace!("Channel for current setup has been initialized");
@@ -392,19 +406,116 @@ where
         self.authenticator.session_key()
     }
 
-    fn preauth_hash_value(&self) -> Option<PreauthHashValue> {
-        self.preauth_hash
-            .as_ref()
-            .unwrap()
-            .unwrap_final_hash()
-            .copied()
+    fn preauth_hash_value(&self) -> crate::Result<Option<PreauthHashValue>> {
+        Ok(self.preauth_hash()?.unwrap_final_hash().copied())
     }
 
-    fn next_preauth_hash(&mut self, data: &IoVec) -> &PreauthHashState {
-        if let Some(ref mut hash) = self.preauth_hash {
-            *hash = hash.clone().next(data);
+    fn next_preauth_hash(&mut self, data: &IoVec) -> crate::Result<()> {
+        let hash = self.preauth_hash_mut()?;
+        *hash = hash.clone().next(data);
+        Ok(())
+    }
+
+    fn finish_preauth_hash(&mut self) -> crate::Result<()> {
+        let hash = self.preauth_hash_mut()?;
+        *hash = hash.clone().finish();
+        Ok(())
+    }
+
+    fn preauth_hash(&self) -> crate::Result<&PreauthHashState> {
+        match &self.state {
+            SetupState::Initial { preauth_hash } | SetupState::InProgress { preauth_hash, .. } => {
+                Ok(preauth_hash)
+            }
+            SetupState::Complete { .. } => Err(Error::InvalidState(
+                "Session setup authentication is already complete.".into(),
+            )),
         }
-        self.preauth_hash.as_ref().unwrap()
+    }
+
+    fn preauth_hash_mut(&mut self) -> crate::Result<&mut PreauthHashState> {
+        match &mut self.state {
+            SetupState::Initial { preauth_hash } | SetupState::InProgress { preauth_hash, .. } => {
+                Ok(preauth_hash)
+            }
+            SetupState::Complete { .. } => Err(Error::InvalidState(
+                "Session setup authentication is already complete.".into(),
+            )),
+        }
+    }
+
+    fn take_input_token(&mut self) -> crate::Result<Vec<u8>> {
+        match &mut self.state {
+            SetupState::Initial { .. } => Ok(Vec::new()),
+            SetupState::InProgress { input_token, .. } => Ok(std::mem::take(input_token)),
+            SetupState::Complete { .. } => Err(Error::InvalidState(
+                "Session setup authentication is already complete.".into(),
+            )),
+        }
+    }
+
+    fn set_input_token(&mut self, token: Vec<u8>) -> crate::Result<()> {
+        match &mut self.state {
+            SetupState::InProgress { input_token, .. } => {
+                *input_token = token;
+                Ok(())
+            }
+            _ => Err(Error::InvalidState(
+                "Cannot store an authentication token outside setup progress.".into(),
+            )),
+        }
+    }
+
+    fn handler(&self) -> Option<&ChannelMessageHandler> {
+        match &self.state {
+            SetupState::InProgress { handler, .. } => Some(handler),
+            _ => None,
+        }
+    }
+
+    fn session(&self) -> crate::Result<&Arc<RwLock<SessionAndChannel>>> {
+        self.registered_session()
+            .ok_or_else(|| Error::InvalidState("Session setup has no registered session.".into()))
+    }
+
+    fn registered_session(&self) -> Option<&Arc<RwLock<SessionAndChannel>>> {
+        match &self.state {
+            SetupState::InProgress { session, .. } | SetupState::Complete { session, .. } => {
+                Some(session)
+            }
+            SetupState::Initial { .. } => None,
+        }
+    }
+
+    fn complete_state(&mut self, flags: SessionFlags) -> crate::Result<()> {
+        let session = match &self.state {
+            SetupState::InProgress { session, .. } => session.clone(),
+            _ => {
+                return Err(Error::InvalidState(
+                    "Cannot complete session setup before registering a session.".into(),
+                ));
+            }
+        };
+        self.state = SetupState::Complete { session, flags };
+        Ok(())
+    }
+
+    fn completed_session(&self) -> crate::Result<Arc<RwLock<SessionAndChannel>>> {
+        match &self.state {
+            SetupState::Complete { session, .. } => Ok(session.clone()),
+            _ => Err(Error::InvalidState(
+                "Session setup did not reach the complete state.".into(),
+            )),
+        }
+    }
+
+    fn completed_flags(&self) -> crate::Result<SessionFlags> {
+        match &self.state {
+            SetupState::Complete { flags, .. } => Ok(*flags),
+            _ => Err(Error::InvalidState(
+                "Session setup did not reach the complete state.".into(),
+            )),
+        }
     }
 
     pub fn upstream(&self) -> &'a ChannelUpstream {
@@ -505,15 +616,15 @@ impl SessionSetupProperties for SmbSessionBind {
     where
         T: SessionSetupProperties,
     {
-        if setup.session_state.is_none() {
+        let Some(session) = setup.registered_session().cloned() else {
             log::warn!("No session to cleanup in binding.");
             return Ok(());
-        }
+        };
         setup
             .upstream
             .worker()
             .ok_or_else(|| Error::InvalidState("Worker not available!".to_string()))?
-            .session_ended(setup.session_state.as_ref().unwrap())
+            .session_ended(&session)
             .await
     }
 
@@ -543,13 +654,12 @@ impl SessionSetupProperties for SmbSessionNew {
     where
         T: SessionSetupProperties,
     {
-        if setup.session_state.is_none() {
+        let Some(session) = setup.registered_session().cloned() else {
             log::trace!("No session to cleanup in setup.");
             return Ok(());
-        }
+        };
 
         log::trace!("Invalidating session before cleanup.");
-        let session = setup.session_state.as_ref().unwrap();
         {
             let session_lock = session.read().await?;
             session_lock.session.write().await?.invalidate();
@@ -559,7 +669,7 @@ impl SessionSetupProperties for SmbSessionNew {
             .upstream
             .worker()
             .ok_or_else(|| Error::InvalidState("Worker not available!".to_string()))?
-            .session_ended(setup.session_state.as_ref().unwrap())
+            .session_ended(&session)
             .await
     }
 
@@ -569,20 +679,11 @@ impl SessionSetupProperties for SmbSessionNew {
     {
         // Only on new sessions we need to initialize the session state with the keys.
         log::trace!("Session keys exchanged. Setting up session state.");
-        setup
-            .session_state
-            .as_ref()
-            .unwrap()
-            .read()
-            .await?
-            .session
-            .write()
-            .await?
-            .setup(
-                &setup.session_key()?,
-                &setup.preauth_hash_value(),
-                setup.conn_info,
-            )
+        setup.session()?.read().await?.session.write().await?.setup(
+            &setup.session_key()?,
+            &setup.preauth_hash_value()?,
+            setup.conn_info,
+        )
     }
 
     async fn on_setup_success<T>(setup: &mut SessionSetup<'_, T>) -> crate::Result<()>
@@ -590,9 +691,9 @@ impl SessionSetupProperties for SmbSessionNew {
         T: SessionSetupProperties,
     {
         log::trace!("Session setup successful");
-        let result = setup.session_state.as_ref().unwrap().read().await?;
+        let result = setup.session()?.read().await?;
         let mut session = result.session.write().await?;
-        session.ready(setup.flags.unwrap(), setup.conn_info)
+        session.ready(setup.completed_flags()?, setup.conn_info)
     }
 
     async fn init_session<T>(
