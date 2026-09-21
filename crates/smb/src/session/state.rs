@@ -236,7 +236,7 @@ pub struct ChannelInfo {
 
     #[cfg(feature = "ksmbd-multichannel-compat")]
     /// Indicates whether this channel was created temporarily for multichannel setup.
-    /// This is relevant for compatibility with ksmbd. See [`crate::connection::Transformer::verify_plain_incoming`]
+    /// This is relevant for compatibility with ksmbd during session setup.
     binding: bool,
 }
 

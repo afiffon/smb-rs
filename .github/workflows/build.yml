@@ -19,38 +19,32 @@ env:
 jobs:
   test:
     runs-on: ubuntu-latest
-    container:
-      image: rustlang/rust:nightly
     timeout-minutes: 15
     strategy:
       matrix:
         compile_features: [async, multi_threaded, single_threaded]
 
-    services:
-      samba:
-        image: ghcr.io/afiffon/smb-tests:latest
-        env:
-          ACCOUNT_LocalAdmin: 123456
-          SAMBA_CONF_LOG_LEVEL: 1
-          SAMBA_VOLUME_CONFIG_MyShare: "[MyShare]; path=/shares/MyShare; read only = no; browseable = yes; create mask = 0777; directory mask = 0777; smb encrypt = desired"
-          SAMBA_VOLUME_CONFIG_PublicShare: "[PublicShare]; path=/shares/PublicShare; read only = no; browseable = yes; guest ok = yes; smb encrypt = disabled"
-          SAMBA_GLOBAL_CONFIG_smb_SPACE_ports: "139 445"
-          SAMBA_GLOBAL_CONFIG_smb_SPACE_encrypt: "auto"
-        options: --name samba --privileged --cap-add NET_ADMIN
-
     env:
-      SMB_RUST_TESTS_SERVER: samba
+      SMB_RUST_TESTS_SERVER: localhost
+      SMB_RUST_TESTS_KERBEROS_SERVER: localhost
+      SSPI_KDC_URL: tcp://127.0.0.1:88
       RUST_LOG: debug
       RUSTFLAGS: "-D warnings"
 
     steps:
       - uses: actions/checkout@v4
+      - name: Set up nightly Rust
+        run: |
+          rustup toolchain install nightly --profile minimal
+          rustup override set nightly
+      - name: Start Samba test server
+        run: docker compose up -d --build --wait tests
       - name: Prepare async tests
         if: ${{ matrix.compile_features == 'async' }}
         run: |
           echo "COMMON_FEATURES=${COMMON_FEATURES},quic" >> "${GITHUB_ENV}"
-          apt update
-          apt install -y libibverbs1 ibverbs-utils librdmacm1 libibumad3 ibverbs-providers rdma-core libibverbs-dev iproute2 perftest librdmacm-dev rdmacm-utils libprotobuf-dev protobuf-compiler clang
+          sudo apt update
+          sudo apt install -y libibverbs1 ibverbs-utils librdmacm1 libibumad3 ibverbs-providers rdma-core libibverbs-dev iproute2 perftest librdmacm-dev rdmacm-utils libprotobuf-dev protobuf-compiler clang
       - name: Format/${{ matrix.compile_features }}
         run: |
           rustup component add rustfmt
@@ -72,6 +66,12 @@ jobs:
       - name: Doc/${{ matrix.compile_features }}
         run: |
           cargo doc --no-default-features --features "${{ matrix.compile_features }},${COMMON_FEATURES}" --no-deps
+      - name: Samba diagnostics
+        if: failure()
+        run: docker compose logs tests
+      - name: Stop Samba test server
+        if: always()
+        run: docker compose down
 
   build:
     strategy:

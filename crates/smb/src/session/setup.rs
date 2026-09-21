@@ -27,8 +27,6 @@ where
     upstream: &'a ChannelUpstream,
     conn_info: &'a Arc<ConnectionInfo>,
 
-    // A place to store the current setup channel, until it is set into the info.
-    channel: Option<ChannelInfo>,
     new_channel_id: u32,
 
     _phantom: std::marker::PhantomData<T>,
@@ -57,7 +55,6 @@ where
             authenticator,
             upstream,
             conn_info,
-            channel: None,
             new_channel_id,
             _phantom: std::marker::PhantomData,
         };
@@ -98,7 +95,10 @@ where
             self.authenticator.user_name().inner()
         );
 
-        let result = self._setup_loop().await;
+        let result = self
+            ._setup_loop()
+            .await
+            .map_err(Error::normalize_authentication_error);
         match result {
             Ok(()) => Ok(self.session_state.take().unwrap()),
             Err(e) => {
@@ -130,44 +130,21 @@ where
                 ));
             }
 
-            // The final response is signed. Install keys after hashing the request,
-            // even if SSPI still needs that response's SPNEGO MIC to complete.
-            // TODO: Success on the first setup response remains unsupported. A new
-            // session needs the server-assigned ID before we can register its state,
-            // install the channel, and validate the signed success response. Supporting
-            // that flow requires deferred signature validation after reading the ID;
-            // until then, fail explicitly before sending a request we cannot validate.
-            let expecting_final_exchange = self.expected_setup_status()? == Status::Success;
-            if expecting_final_exchange && self.session_state.is_none() {
-                return Err(Error::InvalidState(
-                    "Session keys became available before a session ID was assigned.".into(),
-                ));
-            }
+            let expected_status = self.expected_setup_status()?;
 
             let request = self.send_setup_request(token).await?;
-            if expecting_final_exchange {
+            if expected_status == Status::Success {
+                // The final request completes the preauthentication transcript used
+                // to derive the key that validates the response.
                 self.preauth_hash = self.preauth_hash.take().unwrap().finish().into();
-                self.make_channel().await?;
             }
 
-            let response = self.receive_setup_response(request.msg_id).await?;
-            self.validate_setup_response(&response)?;
-            self.last_setup_response = Some(response.message.content.to_sessionsetup()?);
-
-            if !expecting_final_exchange {
-                // Only challenge responses extend the preauthentication transcript.
-                if self.session_state.is_none() {
-                    let session_id = response.message.header.session_id;
-                    log::trace!("Creating session state with id {session_id}.");
-                    self.set_session(T::init_session(self, session_id).await?)
-                        .await?;
-                }
-                self.next_preauth_hash(&response.raw);
-                continue;
+            let response = self
+                .receive_setup_response(request.msg_id, expected_status)
+                .await?;
+            if self.process_setup_response(response).await? {
+                break;
             }
-
-            self.complete_authentication().await?;
-            break;
         }
 
         log::trace!("setup success, finishing up.");
@@ -190,13 +167,13 @@ where
         }
     }
 
-    fn validate_setup_response(&self, response: &IncomingMessage) -> crate::Result<()> {
-        if response.message.header.status != self.expected_setup_status()? as u32 {
-            return Err(Error::UnexpectedMessageStatus(
-                response.message.header.status,
-            ));
-        }
-
+    /// Validates and applies one setup response. Final responses are authenticated
+    /// here before their channel is installed; challenge responses advance the
+    /// preauthentication transcript and provide the next SSPI input token.
+    async fn process_setup_response(
+        &mut self,
+        mut response: IncomingMessage,
+    ) -> crate::Result<bool> {
         let session_id = response.message.header.session_id;
         if session_id == 0 {
             return Err(Error::InvalidMessage(
@@ -213,44 +190,129 @@ where
             ));
         }
 
-        let setup_response = response.message.content.as_sessionsetup()?;
-        if response.message.header.status == Status::Success as u32
-            && !setup_response.session_flags.is_guest_or_null_session()
-            && !response.form.signed_or_encrypted()
-        {
-            return Err(Error::InvalidMessage("Expected a signed message!".into()));
+        if response.message.header.status == Status::MoreProcessingRequired as u32 {
+            self.verify_challenge_response(&mut response).await?;
+            if self.session_state.is_none() {
+                log::trace!("Creating session state with id {session_id}.");
+                self.set_session(T::init_session(self, session_id).await?)
+                    .await?;
+            }
+            self.next_preauth_hash(&response.raw);
+            self.last_setup_response = Some(response.message.content.to_sessionsetup()?);
+            return Ok(false);
         }
-        Ok(())
+
+        let (session_flags, response_token) = {
+            let setup_response = response.message.content.as_sessionsetup()?;
+            (setup_response.session_flags, setup_response.buffer.clone())
+        };
+
+        // A successful SMB reply may carry the final SPNEGO token. In
+        // particular, a Kerberos AP-REP can establish the acceptor subkey used
+        // to verify this response, so SSPI must consume it first.
+        self.complete_authentication(&response_token).await?;
+
+        let channel = self.build_channel()?;
+        self.verify_setup_response(
+            &mut response,
+            &channel,
+            session_flags.is_guest_or_null_session(),
+        )?;
+
+        // A one-round Kerberos exchange has no session state until the signed
+        // response has supplied and authenticated the server-assigned ID.
+        if self.session_state.is_none() {
+            self.set_session(T::init_session(self, session_id).await?)
+                .await?;
+        }
+        self.install_channel(channel).await?;
+        self.flags = Some(session_flags);
+
+        Ok(true)
     }
 
-    async fn complete_authentication(&mut self) -> crate::Result<()> {
-        let response = self
-            .last_setup_response
-            .take()
-            .ok_or_else(|| Error::InvalidState("Missing final session setup response.".into()))?;
-        let session_key = self.authenticator.session_key()?;
-        // A successful SMB reply may carry the last SPNEGO token. Consume it
-        // locally; sending another setup request would restart a completed exchange.
+    async fn complete_authentication(&mut self, response_token: &[u8]) -> crate::Result<()> {
         if !self.authenticator.authentication_completed()? {
-            let output = self.authenticator.next(&response.buffer).await?;
+            let output = self.authenticator.next(response_token).await?;
             if !output.is_empty() {
                 return Err(Error::InvalidState(
                     "SSPI produced another token after SMB session setup succeeded.".into(),
                 ));
             }
         }
+
         if !self.authenticator.authentication_completed()? {
             return Err(Error::InvalidState(
                 "SMB session setup succeeded before SSPI authentication completed.".into(),
             ));
         }
-        if self.authenticator.session_key()? != session_key {
-            return Err(Error::InvalidState(
-                "SSPI changed the session key after the channel was installed.".into(),
-            ));
-        }
-        self.flags = Some(response.session_flags);
+
         Ok(())
+    }
+
+    async fn verify_challenge_response(&self, response: &mut IncomingMessage) -> crate::Result<()> {
+        let Some(session_state) = &self.session_state else {
+            return Ok(());
+        };
+
+        let (session, channel) = {
+            let session_state = session_state.read().await?;
+            let Some(channel) = session_state.channel.clone() else {
+                return Ok(());
+            };
+            (session_state.session.clone(), channel)
+        };
+
+        let unsigned_allowed = session.read().await?.allow_unsigned()?;
+
+        self.verify_setup_response(response, &channel, unsigned_allowed)
+    }
+
+    fn verify_setup_response(
+        &self,
+        response: &mut IncomingMessage,
+        channel: &ChannelInfo,
+        unsigned_allowed: bool,
+    ) -> crate::Result<()> {
+        if response.form.encrypted {
+            return Ok(());
+        }
+
+        let signed = response.message.header.flags.signed()
+            || Self::is_unsigned_binding_compat_response(response, channel);
+        if !signed {
+            if unsigned_allowed {
+                return Ok(());
+            }
+            return Err(Error::InvalidMessage("Expected a signed message!".into()));
+        }
+
+        let mut signer = channel.signer()?.clone();
+        crate::connection::transformer::Transformer::verify_incoming_signature(
+            &mut response.message,
+            &response.raw,
+            &mut response.form,
+            &mut signer,
+        )
+    }
+
+    fn is_unsigned_binding_compat_response(
+        _response: &IncomingMessage,
+        _channel: &ChannelInfo,
+    ) -> bool {
+        // ksmbd has a subtle, but irritating bug, where it does not set the "signed" flag
+        // for responses during multi channel session setups. To resolve this, we check if the
+        // current channel is defined as "binding-only" channel. The feature `ksmbd-multichannel-compat`
+        // must also be enabled, or else this code will not be compiled.
+        // This behavior is actually against the spec - MS-SMB2 3.2.4.1.1:
+        // > "If the client signs the request, it MUST set the SMB2_FLAGS_SIGNED bit in the Flags field of the SMB2 header."
+        #[cfg(feature = "ksmbd-multichannel-compat")]
+        {
+            return _response.message.header.signature != 0 && _channel.is_binding();
+        }
+
+        #[cfg(not(feature = "ksmbd-multichannel-compat"))]
+        false
     }
 
     async fn set_session(&mut self, session: Arc<RwLock<SessionInfo>>) -> crate::Result<()> {
@@ -273,41 +335,19 @@ where
         Ok(())
     }
 
-    async fn receive_setup_response(&mut self, for_msg_id: u64) -> crate::Result<IncomingMessage> {
-        let expected_status = self.expected_setup_status()?;
+    async fn receive_setup_response(
+        &mut self,
+        for_msg_id: u64,
+        expected_status: Status,
+    ) -> crate::Result<IncomingMessage> {
         let expected_statuses = [expected_status];
         let roptions = ReceiveOptions::new()
             .with_status(&expected_statuses)
             .with_cmd(Some(smb_msg::Command::SessionSetup))
             .with_msg_id_filter(for_msg_id);
 
-        let channel_set_up = self.session_state.is_some()
-            && self
-                .session_state
-                .as_ref()
-                .unwrap()
-                .read()
-                .await?
-                .channel
-                .is_some();
-        let skip_security_validation =
-            expected_status == Status::MoreProcessingRequired && !channel_set_up;
-        if let Some(handler) = &self.handler {
-            log::trace!(
-                "setup loop: receiving with channel handler; skip_security_validation={skip_security_validation}"
-            );
-            handler
-                .recvo_internal(roptions, skip_security_validation)
-                .await
-        } else {
-            if !skip_security_validation {
-                return Err(Error::InvalidState(
-                    "Cannot validate session setup success without a channel handler.".into(),
-                ));
-            }
-            log::trace!("setup loop: receiving with upstream handler");
-            self.upstream.handler.recvo(roptions).await
-        }
+        log::trace!("setup loop: receiving unvalidated response with upstream handler");
+        self.upstream.handler.recvo(roptions).await
     }
 
     async fn send_setup_request(&mut self, buf: Vec<u8>) -> crate::Result<SendMessageResult> {
@@ -326,25 +366,23 @@ where
         Ok(send_result)
     }
 
-    /// Initializes the channel that is resulted from the current session setup.
-    /// - Calls `T::on_session_key_exchanged` before setting up the channel.
-    /// - Sets `self.channel` to the instantiated channel.
-    /// - Calls `T::on_channel_set_up` after setting up the channel.
-    async fn make_channel(&mut self) -> crate::Result<()> {
-        T::on_session_key_exchanged(self).await?;
-        log::trace!("Session keys are set.");
-
-        let channel_info = ChannelInfo::new(
+    fn build_channel(&self) -> crate::Result<ChannelInfo> {
+        let channel = ChannelInfo::new(
             self.new_channel_id,
             &self.session_key()?,
             &self.preauth_hash_value(),
             self.conn_info,
         )?;
+        #[cfg(feature = "ksmbd-multichannel-compat")]
+        let channel = channel.with_binding(T::is_binding());
+        Ok(channel)
+    }
 
-        self.channel = Some(channel_info);
-
+    async fn install_channel(&mut self, channel: ChannelInfo) -> crate::Result<()> {
+        T::on_session_key_exchanged(self).await?;
+        log::trace!("Session keys are set.");
         let mut session_lock = self.session_state.as_ref().unwrap().write().await?;
-        session_lock.set_channel(self.channel.take().unwrap());
+        session_lock.set_channel(channel);
 
         log::trace!("Channel for current setup has been initialized");
         Ok(())
@@ -380,6 +418,11 @@ where
 
 #[maybe_async(AFIT)]
 pub(crate) trait SessionSetupProperties {
+    #[cfg(feature = "ksmbd-multichannel-compat")]
+    fn is_binding() -> bool {
+        false
+    }
+
     /// This function is called when setup error is encountered, to perform any necessary cleanup.
     async fn error_cleanup<T>(setup: &mut SessionSetup<'_, T>) -> crate::Result<()>
     where
@@ -433,6 +476,11 @@ pub(crate) struct SmbSessionBind;
 
 #[maybe_async(AFIT)]
 impl SessionSetupProperties for SmbSessionBind {
+    #[cfg(feature = "ksmbd-multichannel-compat")]
+    fn is_binding() -> bool {
+        true
+    }
+
     async fn make_request<T>(
         _setup: &mut SessionSetup<'_, T>,
         buffer: Vec<u8>,
