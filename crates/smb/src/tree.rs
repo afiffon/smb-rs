@@ -8,7 +8,7 @@ use crate::FileCreateArgs;
 use crate::connection::connection_info::ConnectionInfo;
 use smb_fscc::{FileAccessMask, FileAttributes};
 use smb_msg::{
-    CreateOptions, RequestContent, ShareFlags, ShareType,
+    CreateOptions, RequestContent, ShareAccessFlags, ShareFlags, ShareType,
     create::CreateDisposition,
     tree_connect::{TreeConnectRequest, TreeDisconnectRequest},
 };
@@ -152,6 +152,7 @@ impl Tree {
                 options: CreateOptions::new(),
                 desired_access,
                 attributes: FileAttributes::new(),
+                share_access: ShareAccessFlags::new(),
             },
         )
         .await
@@ -172,6 +173,7 @@ impl Tree {
                 options: CreateOptions::new().with_directory_file(true),
                 desired_access,
                 attributes: FileAttributes::new().with_directory(true),
+                share_access: ShareAccessFlags::new(),
             },
         )
         .await
