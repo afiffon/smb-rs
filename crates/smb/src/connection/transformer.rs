@@ -351,11 +351,18 @@ impl Transformer {
         raw: &IoVec,
         form: &mut MessageForm,
     ) -> crate::Result<()> {
+        // Session setup owns validation of its responses. The final authentication
+        // token may establish the key needed to verify the same response, and a
+        // one-round exchange does not have a registered session to look up yet.
+        if message.header.command == Command::SessionSetup {
+            return Ok(());
+        }
+
         // Check if signing check is required.
         if form.encrypted
             || message.header.message_id == u64::MAX
             || message.header.status == Status::Pending as u32
-            || !(message.header.flags.signed() || self.is_message_signed_ksmbd(message).await)
+            || !message.header.flags.signed()
         {
             return Ok(());
         }
@@ -379,6 +386,16 @@ impl Transformer {
             })
             .await?;
 
+        Self::verify_incoming_signature(message, raw, form, &mut signer)?;
+        Ok(())
+    }
+
+    pub(crate) fn verify_incoming_signature(
+        message: &mut PlainResponse,
+        raw: &IoVec,
+        form: &mut MessageForm,
+        signer: &mut crate::session::MessageSigner,
+    ) -> crate::Result<()> {
         signer.verify_signature(&mut message.header, raw)?;
         log::debug!(
             "Message #{} verified (signature={}).",
@@ -387,42 +404,6 @@ impl Transformer {
         );
         form.signed = true;
         Ok(())
-    }
-
-    /// (Internal)
-    ///
-    /// ksmbd multichannel setup compatibility check.
-    ///
-    // ksmbd has a subtle, but irritating bug, where it does not set the "signed" flag
-    // for responses during multi channel session setups. To resolve this, we check if the
-    // current channel is defined as "binding-only" channel. The feature `ksmbd-multichannel-compat`
-    // must also be enabled, or else this code will not be compiled.
-    // This behavior is actually against the spec - MS-SMB2 3.2.4.1.1:
-    // > "If the client signs the request, it MUST set the SMB2_FLAGS_SIGNED bit in the Flags field of the SMB2 header."
-    #[maybe_async]
-    async fn is_message_signed_ksmbd(&self, _message: &PlainResponse) -> bool {
-        #[cfg(feature = "ksmbd-multichannel-compat")]
-        {
-            if _message.header.command != Command::SessionSetup || _message.header.signature == 0 {
-                return false;
-            }
-
-            let session_id = _message.header.session_id;
-            let is_binding = self
-                ._with_channel(session_id, |session| {
-                    let channel_info = session.channel.as_ref().ok_or(crate::Error::Other(
-                        "Get channel info for ksmbd sign test failed",
-                    ))?;
-
-                    Ok(channel_info.is_binding())
-                })
-                .await;
-
-            return matches!(is_binding, Ok(true));
-        }
-
-        #[cfg(not(feature = "ksmbd-multichannel-compat"))]
-        return false;
     }
 }
 

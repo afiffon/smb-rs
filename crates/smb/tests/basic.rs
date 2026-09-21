@@ -4,12 +4,14 @@ mod common;
 use std::str::FromStr;
 use std::time::Duration;
 
-use common::{TestConstants, TestEnv, make_server_connection};
+use common::{
+    TestConstants, TestEnv, default_connection_config, make_server_connection,
+    smb_tests_kerberos_server,
+};
 use serial_test::serial;
 use smb::{Client, ClientConfig, UncPath};
 use smb::{ConnectionConfig, FileCreateArgs};
 use smb_fscc::FileDispositionInformation;
-use smb_msg::Status;
 use smb_transport::{TransportConfig, TransportError};
 
 #[maybe_async::maybe_async]
@@ -86,13 +88,79 @@ async fn test_basic_auth_fail() -> smb::Result<()> {
 #[maybe_async::maybe_async]
 async fn do_test_basic_auth_fail() -> smb::Result<()> {
     let res = _do_minimal_connection_test(None, None).await.unwrap_err();
-    match res {
-        smb::Error::UnexpectedMessageStatus(status) => {
-            assert_eq!(status, Status::LogonFailure as u32);
-        }
-        _ => panic!("Expected LogonFailure error"),
-    }
+    assert!(
+        matches!(res, smb::Error::LogonFailure { .. }),
+        "expected logon failure, got {res:?}"
+    );
     smb::Result::Ok(())
+}
+
+#[cfg(feature = "kerberos")]
+#[test_log::test(maybe_async::test(
+    not(feature = "async"),
+    async(feature = "async", tokio::test(flavor = "multi_thread"))
+))]
+#[serial]
+async fn test_basic_kerberos_auth_fail() -> smb::Result<()> {
+    with_temp_env!(
+        [
+            (TestEnv::SERVER, Some(smb_tests_kerberos_server())),
+            (TestEnv::USER, Some(TestEnv::KERBEROS_USER.to_string())),
+            (
+                TestEnv::PASSWORD,
+                Some(TestEnv::DEFAULT_PASSWORD.to_string() + "1")
+            ),
+        ],
+        do_test_basic_kerberos_auth_fail()
+    )
+}
+
+#[cfg(feature = "kerberos")]
+#[maybe_async::maybe_async]
+async fn do_test_basic_kerberos_auth_fail() -> smb::Result<()> {
+    let res = _do_minimal_connection_test(
+        Some(ConnectionConfig {
+            auth_methods: smb::connection::AuthMethodsConfig {
+                kerberos: true,
+                ntlm: false,
+            },
+            ..default_connection_config()
+        }),
+        Some(TestConstants::KERBEROS_SHARE),
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        matches!(res, smb::Error::LogonFailure { .. }),
+        "expected logon failure, got {res:?}"
+    );
+    Ok(())
+}
+
+#[cfg(feature = "kerberos")]
+#[test_log::test(maybe_async::test(
+    not(feature = "async"),
+    async(feature = "async", tokio::test(flavor = "multi_thread"))
+))]
+#[serial]
+async fn test_basic_kerberos() -> Result<(), Box<dyn std::error::Error>> {
+    with_temp_env!(
+        [
+            (TestEnv::SERVER, Some(smb_tests_kerberos_server())),
+            (TestEnv::USER, Some(TestEnv::KERBEROS_USER.to_string())),
+        ],
+        _do_minimal_connection_test(
+            Some(ConnectionConfig {
+                auth_methods: smb::connection::AuthMethodsConfig {
+                    kerberos: true,
+                    ntlm: false,
+                },
+                ..default_connection_config()
+            }),
+            Some(TestConstants::KERBEROS_SHARE)
+        )
+    )?;
+    Ok(())
 }
 
 #[maybe_async::maybe_async]

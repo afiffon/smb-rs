@@ -89,12 +89,18 @@ impl Authenticator {
         format!("cifs/{server_fqdn}")
     }
 
-    fn get_context_requirements() -> ClientRequestFlags {
-        ClientRequestFlags::DELEGATE
+    fn get_context_requirements(&self) -> ClientRequestFlags {
+        let mut requirements = ClientRequestFlags::DELEGATE
             | ClientRequestFlags::MUTUAL_AUTH
             | ClientRequestFlags::INTEGRITY
-            | ClientRequestFlags::FRAGMENT_TO_FIT
-            | ClientRequestFlags::USE_SESSION_KEY
+            | ClientRequestFlags::FRAGMENT_TO_FIT;
+        // For Kerberos, USE_SESSION_KEY requests user-to-user authentication,
+        // not access to the established session key. SMB uses a CIFS service
+        // ticket instead. Retain the flag for NTLM-only SPNEGO MIC exchange.
+        if !self.ssp.negotiated_protocol().is_kerberos() {
+            requirements |= ClientRequestFlags::USE_SESSION_KEY;
+        }
+        requirements
     }
 
     const SSPI_REQ_DATA_REPRESENTATION: DataRepresentation = DataRepresentation::Native;
@@ -107,11 +113,12 @@ impl Authenticator {
 
         let mut output_buffer = vec![SecurityBuffer::new(Vec::new(), BufferType::Token)];
         let target_name = Self::make_sspi_target_name(&self.server_hostname);
+        let context_requirements = self.get_context_requirements();
         let mut builder = self
             .ssp
             .initialize_security_context()
             .with_credentials_handle(&mut self.cred_handle.credentials_handle)
-            .with_context_requirements(Self::get_context_requirements())
+            .with_context_requirements(context_requirements)
             .with_target_data_representation(Self::SSPI_REQ_DATA_REPRESENTATION)
             .with_output(&mut output_buffer);
 

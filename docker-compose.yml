@@ -1,5 +1,6 @@
 services:
   tests:
+    image: ghcr.io/afiffon/smb-tests:latest
     build:
       context: crates/smb/tests
       dockerfile: Dockerfile
@@ -8,22 +9,25 @@ services:
       platforms:
         - linux/amd64
     ports:
+      - 88:88/tcp
+      - 88:88/udp
       - 445:445
       - 139:139
+    hostname: samba
     networks:
-      - default
-      - default2
+      default:
+        aliases:
+          - samba.smb.test
+      default2: {}
     cap_add:
       - SYS_ADMIN
       - SYS_PTRACE
-    environment:
-      ACCOUNT_LocalAdmin: 123456
-      SAMBA_CONF_LOG_LEVEL: 10
-      SAMBA_VOLUME_CONFIG_MyShare: "[MyShare]; path=/shares/MyShare; read only = no; browseable = yes; create mask = 0777; directory mask = 0777; smb encrypt = desired"
-      SAMBA_VOLUME_CONFIG_PublicShare: "[PublicShare]; path=/shares/PublicShare; read only = no; browseable = yes; guest ok = yes; smb encrypt = disabled"
-      SAMBA_GLOBAL_CONFIG_smb_SPACE_ports: "139 445"
-      SAMBA_GLOBAL_CONFIG_smb_SPACE_encrypt: "auto"
-      SAMBA_GLOBAL_CONFIG_server_SPACE_multi_SPACE_channel_SPACE_support: "yes"
+    healthcheck:
+      test: ["CMD-SHELL", "smbclient //samba.smb.test/KerberosShare --use-kerberos=required -U 'LocalAdmin%123456' -c ls >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
   dev:
     build:
       context: .
@@ -32,6 +36,9 @@ services:
       CARGO_TERM_COLOR: always
       RUST_BACKTRACE: 1
       RUST_LOG: debug
+      SMB_RUST_TESTS_SERVER: samba
+      SMB_RUST_TESTS_KERBEROS_SERVER: samba.smb.test
+      SSPI_KDC_URL: tcp://samba.smb.test:88
     entrypoint: tail -f /dev/null
     networks:
       - default

@@ -6,28 +6,34 @@ pub struct TestEnv;
 
 impl TestEnv {
     pub const SERVER: &'static str = "SMB_RUST_TESTS_SERVER";
+    pub const KERBEROS_SERVER: &'static str = "SMB_RUST_TESTS_KERBEROS_SERVER";
     pub const USER: &'static str = "SMB_RUST_TESTS_USER_NAME";
     pub const DEFAULT_USER: &'static str = "LocalAdmin";
+    pub const KERBEROS_USER: &'static str = "LocalAdmin@SMB.TEST";
     pub const PASSWORD: &'static str = "SMB_RUST_TESTS_PASSWORD";
     pub const DEFAULT_PASSWORD: &'static str = "123456";
 
-    pub const GUEST_USER: &'static str = "/GUEST";
-    pub const GUEST_PASSWORD: &'static str = "";
+    pub const GUEST_USER: &'static str = "Guest";
+    pub const GUEST_PASSWORD: &'static str = "123456";
 }
 
 pub struct TestConstants;
 
 impl TestConstants {
     pub const DEFAULT_SHARE: &'static str = "MyShare";
+    pub const KERBEROS_SHARE: &'static str = "KerberosShare";
     pub const PUBLIC_GUEST_SHARE: &'static str = "PublicShare";
 }
 
 pub fn default_connection_config() -> ConnectionConfig {
-    let mut conn_config = ConnectionConfig::default();
-    conn_config.timeout = Some(std::time::Duration::from_secs(10));
-    conn_config.auth_methods.kerberos = false;
-    conn_config.auth_methods.ntlm = true;
-    conn_config
+    ConnectionConfig {
+        timeout: Some(std::time::Duration::from_secs(10)),
+        auth_methods: connection::AuthMethodsConfig {
+            kerberos: false,
+            ntlm: true,
+        },
+        ..Default::default()
+    }
 }
 
 /// Creates a new SMB client and connects to the specified share on the server.
@@ -50,6 +56,10 @@ pub async fn make_server_connection(
 /// Returns the server address for the tests connection.
 pub fn smb_tests_server() -> String {
     var(TestEnv::SERVER).unwrap_or("127.0.0.1".to_string())
+}
+
+pub fn smb_tests_kerberos_server() -> String {
+    var(TestEnv::KERBEROS_SERVER).unwrap_or("localhost".to_string())
 }
 
 #[maybe_async::maybe_async]
