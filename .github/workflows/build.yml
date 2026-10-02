@@ -25,7 +25,8 @@ jobs:
         compile_features: [async, multi_threaded, single_threaded]
 
     env:
-      SMB_RUST_TESTS_SERVER: localhost
+      SMB_RUST_TESTS_SERVER: localhost:1445
+      SMB_RUST_TESTS_DOMAIN_SERVER: localhost
       SMB_RUST_TESTS_KERBEROS_SERVER: localhost
       SSPI_KDC_URL: tcp://127.0.0.1:88
       RUST_LOG: debug
@@ -38,7 +39,7 @@ jobs:
           rustup toolchain install nightly --profile minimal
           rustup override set nightly
       - name: Start Samba test server
-        run: docker compose up -d --build --wait tests
+        run: docker compose up -d --build --wait workgroup-test domain-test
       - name: Prepare async tests
         if: ${{ matrix.compile_features == 'async' }}
         run: |
@@ -68,7 +69,7 @@ jobs:
           cargo doc --no-default-features --features "${{ matrix.compile_features }},${COMMON_FEATURES}" --no-deps
       - name: Samba diagnostics
         if: failure()
-        run: docker compose logs tests
+        run: docker compose logs workgroup-test domain-test
       - name: Stop Samba test server
         if: always()
         run: docker compose down

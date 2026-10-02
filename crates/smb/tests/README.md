@@ -21,15 +21,17 @@ Then, you can run the tests as usual, using `cargo test`.
 > to specify the new port.
 > The same goes for the IP address, if necessary.
 
-The Samba image is a disposable `SMB.TEST` Active Directory domain controller.
-It serves the regular authenticated share, a guest share, and a dedicated
-Kerberos share from the same process. Its fixed test identity is
-`LocalAdmin@SMB.TEST` with password `123456`.
+The test fixture starts two Samba servers. `workgroup-test` is a standalone
+workgroup server on host port 1445 and runs the general integration suite.
+`domain-test` is a disposable `SMB.TEST` Active Directory domain controller on
+host port 445. Authentication and dialect coverage runs against both servers;
+null-session and Kerberos coverage runs against the domain server. The fixed
+test identity is `LocalAdmin` with password `123456`.
 
 Start it with:
 
 ```bash
-docker compose up -d --build --wait tests
+docker compose up -d --build --wait workgroup-test domain-test
 ```
 
 The image registers `cifs/localhost`, so the complete local suite needs only the
@@ -46,5 +48,5 @@ matrix, so both paths and the guest share run every time. Set
 `SMB_RUST_TESTS_KERBEROS_SERVER` only when the KDC's SMB hostname is not
 `localhost`; the hostname must have a matching CIFS service principal.
 
-Ports 88 (TCP and UDP), 139, and 445 must be available. Recreating the container
-provisions a fresh domain and discards its test files.
+Ports 88 (TCP and UDP), 139, 445, 1139, and 1445 must be available. Recreating
+the containers provisions a fresh domain and discards their test files.

@@ -1,8 +1,11 @@
-FROM debian:bookworm-slim
+FROM ghcr.io/servercontainers/samba:smbd-only-latest
 
-RUN apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        samba samba-ad-dc samba-ad-provision winbind krb5-user smbclient && \
-    rm -rf /var/lib/apt/lists/* /etc/samba/smb.conf
-COPY kerberos-entrypoint.sh /usr/local/bin/kerberos-entrypoint.sh
-ENTRYPOINT ["sh", "/usr/local/bin/kerberos-entrypoint.sh"]
+ENV NETBIOS_DISABLE=1
+ENV AVAHI_DISABLE=1
+ENV WSDD2_DISABLE=1
+
+ENV SAMBA_GLOBAL_CONFIG_server_SPACE_min_SPACE_protocol=SMB2_02
+ENV SAMBA_GLOBAL_CONFIG_server_SPACE_max_SPACE_protocol=SMB3_11
+
+RUN mkdir -p /shares/MyShare /shares/PublicShare && \
+    chmod -R 777 /shares

@@ -5,8 +5,7 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use common::{
-    TestConstants, TestEnv, default_connection_config, make_server_connection,
-    smb_tests_kerberos_server,
+    TestConstants, TestEnv, TestServer, default_connection_config, make_server_connection_for,
 };
 use serial_test::serial;
 use smb::{Client, ClientConfig, UncPath};
@@ -16,16 +15,26 @@ use smb_transport::{TransportConfig, TransportError};
 
 #[maybe_async::maybe_async]
 async fn _do_minimal_connection_test(
+    server: TestServer,
     conn_config: Option<ConnectionConfig>,
     share: Option<&str>,
 ) -> smb::Result<()> {
-    let (client, share_path) =
-        make_server_connection(share.unwrap_or(TestConstants::DEFAULT_SHARE), conn_config).await?;
+    let (client, share_path) = make_server_connection_for(
+        server,
+        share.unwrap_or(TestConstants::DEFAULT_SHARE),
+        conn_config,
+    )
+    .await?;
 
+    exercise_share(&client, &share_path).await
+}
+
+#[maybe_async::maybe_async]
+async fn exercise_share(client: &Client, share_path: &UncPath) -> smb::Result<()> {
     // Create a file
     let file = client
         .create_file(
-            &share_path.with_path("basic.txt"),
+            &share_path.clone().with_path("basic.txt"),
             &FileCreateArgs::make_create_new(Default::default(), Default::default()),
         )
         .await?
@@ -39,13 +48,14 @@ async fn _do_minimal_connection_test(
 
 #[maybe_async::maybe_async]
 async fn _test_basic_integration(
+    server: TestServer,
     transport: TransportConfig,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let conn_config = ConnectionConfig {
         transport,
         ..Default::default()
     };
-    Ok(_do_minimal_connection_test(Some(conn_config), None).await?)
+    Ok(_do_minimal_connection_test(server, Some(conn_config), None).await?)
 }
 
 #[test_log::test(maybe_async::test(
@@ -60,6 +70,7 @@ async fn test_basic_guest() -> smb::Result<()> {
             (TestEnv::PASSWORD, Some(TestEnv::GUEST_PASSWORD.to_string())),
         ],
         _do_minimal_connection_test(
+            TestServer::Workgroup,
             ConnectionConfig {
                 allow_unsigned_guest_access: true,
                 ..Default::default()
@@ -75,19 +86,79 @@ async fn test_basic_guest() -> smb::Result<()> {
     async(feature = "async", tokio::test(flavor = "multi_thread"))
 ))]
 #[serial]
+async fn test_basic_guest_domain_rejected() -> smb::Result<()> {
+    let result = with_temp_env!(
+        [
+            (TestEnv::USER, Some(TestEnv::GUEST_USER.to_string())),
+            (TestEnv::PASSWORD, Some(TestEnv::GUEST_PASSWORD.to_string())),
+        ],
+        _do_minimal_connection_test(
+            TestServer::Domain,
+            Some(ConnectionConfig {
+                allow_unsigned_guest_access: true,
+                ..Default::default()
+            }),
+            Some(TestConstants::PUBLIC_GUEST_SHARE)
+        )
+    );
+    assert!(matches!(result, Err(smb::Error::LogonFailure { .. })));
+    Ok(())
+}
+
+#[test_log::test(maybe_async::test(
+    not(feature = "async"),
+    async(feature = "async", tokio::test(flavor = "multi_thread"))
+))]
+#[serial]
+async fn test_basic_null_session_domain() -> smb::Result<()> {
+    let server = TestServer::Domain.address();
+    let share_path = UncPath::new(&server)?.with_share(TestConstants::PUBLIC_GUEST_SHARE)?;
+    let client = Client::new(ClientConfig {
+        connection: ConnectionConfig {
+            allow_unsigned_guest_access: true,
+            ..default_connection_config()
+        },
+        ..Default::default()
+    });
+    client.share_connect_null(&share_path).await?;
+    exercise_share(&client, &share_path).await
+}
+
+#[test_log::test(maybe_async::test(
+    not(feature = "async"),
+    async(feature = "async", tokio::test(flavor = "multi_thread"))
+))]
+#[serial]
 async fn test_basic_auth_fail() -> smb::Result<()> {
     with_temp_env!(
         [(
             TestEnv::PASSWORD,
             Some(TestEnv::DEFAULT_PASSWORD.to_string() + "1")
         ),],
-        do_test_basic_auth_fail()
+        do_test_basic_auth_fail(TestServer::Workgroup)
+    )
+}
+
+#[test_log::test(maybe_async::test(
+    not(feature = "async"),
+    async(feature = "async", tokio::test(flavor = "multi_thread"))
+))]
+#[serial]
+async fn test_basic_auth_fail_domain() -> smb::Result<()> {
+    with_temp_env!(
+        [(
+            TestEnv::PASSWORD,
+            Some(TestEnv::DEFAULT_PASSWORD.to_string() + "1")
+        ),],
+        do_test_basic_auth_fail(TestServer::Domain)
     )
 }
 
 #[maybe_async::maybe_async]
-async fn do_test_basic_auth_fail() -> smb::Result<()> {
-    let res = _do_minimal_connection_test(None, None).await.unwrap_err();
+async fn do_test_basic_auth_fail(server: TestServer) -> smb::Result<()> {
+    let res = _do_minimal_connection_test(server, None, None)
+        .await
+        .unwrap_err();
     assert!(
         matches!(res, smb::Error::LogonFailure { .. }),
         "expected logon failure, got {res:?}"
@@ -104,7 +175,6 @@ async fn do_test_basic_auth_fail() -> smb::Result<()> {
 async fn test_basic_kerberos_auth_fail() -> smb::Result<()> {
     with_temp_env!(
         [
-            (TestEnv::SERVER, Some(smb_tests_kerberos_server())),
             (TestEnv::USER, Some(TestEnv::KERBEROS_USER.to_string())),
             (
                 TestEnv::PASSWORD,
@@ -119,6 +189,7 @@ async fn test_basic_kerberos_auth_fail() -> smb::Result<()> {
 #[maybe_async::maybe_async]
 async fn do_test_basic_kerberos_auth_fail() -> smb::Result<()> {
     let res = _do_minimal_connection_test(
+        TestServer::Kerberos,
         Some(ConnectionConfig {
             auth_methods: smb::connection::AuthMethodsConfig {
                 kerberos: true,
@@ -145,11 +216,9 @@ async fn do_test_basic_kerberos_auth_fail() -> smb::Result<()> {
 #[serial]
 async fn test_basic_kerberos() -> Result<(), Box<dyn std::error::Error>> {
     with_temp_env!(
-        [
-            (TestEnv::SERVER, Some(smb_tests_kerberos_server())),
-            (TestEnv::USER, Some(TestEnv::KERBEROS_USER.to_string())),
-        ],
+        [(TestEnv::USER, Some(TestEnv::KERBEROS_USER.to_string())),],
         _do_minimal_connection_test(
+            TestServer::Kerberos,
             Some(ConnectionConfig {
                 auth_methods: smb::connection::AuthMethodsConfig {
                     kerberos: true,
@@ -233,7 +302,16 @@ macro_rules! test_transport {
 ))]
 #[serial]
 async fn [<test_basic_integration_ $transport_config:lower>]() -> Result<(), Box<dyn std::error::Error>> {
-    _test_basic_integration(TransportConfig::$config_value).await
+    _test_basic_integration(TestServer::Workgroup, TransportConfig::$config_value).await
+}
+
+#[test_log::test(maybe_async::test(
+    not(feature = "async"),
+    async(feature = "async", tokio::test(flavor = "multi_thread"))
+))]
+#[serial]
+async fn [<test_basic_integration_domain_ $transport_config:lower>]() -> Result<(), Box<dyn std::error::Error>> {
+    _test_basic_integration(TestServer::Domain, TransportConfig::$config_value).await
 }
 
 #[test_log::test(maybe_async::test(

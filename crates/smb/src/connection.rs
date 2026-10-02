@@ -528,6 +528,19 @@ impl Connection {
         Ok(session)
     }
 
+    /// Starts an anonymous null session for this connection.
+    pub async fn authenticate_null(&self) -> crate::Result<Session> {
+        let session =
+            Session::create_null(&self.handler, self.handler.conn_info.get().unwrap()).await?;
+        let session_handler = session.handler.weak();
+        self.handler
+            .sessions
+            .lock()
+            .await?
+            .insert(session.session_id(), session_handler);
+        Ok(session)
+    }
+
     /// Returns the connection information, if the connection has been negotiated.
     /// Otherwise, returns `None`.
     pub fn conn_info(&self) -> Option<&Arc<ConnectionInfo>> {

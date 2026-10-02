@@ -215,6 +215,7 @@ enum SessionInfoState {
         algos: SessionAlgos,
         flags: SessionFlags,
         force_encryption: bool,
+        allow_unsigned: bool,
     },
     /// The session is invalid, and should not be used anymore.
     Invalid,
@@ -307,6 +308,7 @@ impl SessionInfo {
         session_key: &KeyToDerive,
         preauth_hash: &Option<PreauthHashValue>,
         info: &ConnectionInfo,
+        null_session: bool,
     ) -> crate::Result<()> {
         if !matches!(self.state, Some(SessionInfoState::Initial)) {
             return Err(crate::Error::InvalidState(
@@ -318,6 +320,11 @@ impl SessionInfo {
         log::trace!("Session algos set up: {algos:?}");
 
         let info_allows_unsigned = info.config.allow_unsigned_guest_access;
+        if null_session && !info_allows_unsigned {
+            return Err(crate::Error::InvalidMessage(
+                "Signing may be disabled to allow guest or anonymous logins.".to_string(),
+            ));
+        }
 
         self.state = Some(SessionInfoState::SettingUp {
             algos,
@@ -330,7 +337,12 @@ impl SessionInfo {
     /// Turns the session into a ready state.
     ///
     /// Verifies the session flags against the connection config, and sets them in the session info.
-    pub fn ready(&mut self, flags: SessionFlags, conn_info: &ConnectionInfo) -> crate::Result<()> {
+    pub fn ready(
+        &mut self,
+        flags: SessionFlags,
+        conn_info: &ConnectionInfo,
+        null_session: bool,
+    ) -> crate::Result<()> {
         if !self.is_setting_up() {
             return Err(crate::Error::InvalidState(
                 "Session is not set up, cannot set flags.".to_string(),
@@ -340,7 +352,13 @@ impl SessionInfo {
         // When session flags are finally set, make sure the server accepts encryption,
         // if it is required for us. Also, make sure it is not a null/guest session.
 
+        let guest_or_null_session = null_session || flags.is_guest_or_null_session();
         let force_encryption = if conn_info.config.encryption_mode.is_required() {
+            if guest_or_null_session {
+                return Err(crate::Error::InvalidMessage(
+                    "Encryption cannot be required for a guest or anonymous session.".to_string(),
+                ));
+            }
             if !flags.encrypt_data() {
                 log::debug!(
                     "Note! session does not require encryption, but it is required by the connection config. Forcing encryption."
@@ -363,7 +381,7 @@ impl SessionInfo {
             false
         };
 
-        if !conn_info.config.allow_unsigned_guest_access && flags.is_guest_or_null_session() {
+        if !conn_info.config.allow_unsigned_guest_access && guest_or_null_session {
             return Err(crate::Error::InvalidMessage(
                 "Signing may be disabled to allow guest or anonymous logins.".to_string(),
             ));
@@ -374,6 +392,7 @@ impl SessionInfo {
                 algos,
                 flags,
                 force_encryption,
+                allow_unsigned: guest_or_null_session,
             }),
             _ => unreachable!(),
         };
@@ -429,7 +448,7 @@ impl SessionInfo {
     /// If the session is not setting up or ready, it will return an error.
     pub fn allow_unsigned(&self) -> crate::Result<bool> {
         match &self.state {
-            Some(SessionInfoState::Ready { flags, .. }) => Ok(flags.is_guest_or_null_session()),
+            Some(SessionInfoState::Ready { allow_unsigned, .. }) => Ok(*allow_unsigned),
             Some(SessionInfoState::SettingUp { allow_unsigned, .. }) => Ok(*allow_unsigned),
             _ => Err(crate::Error::InvalidState(
                 "Session is not setting up or ready!".to_string(),

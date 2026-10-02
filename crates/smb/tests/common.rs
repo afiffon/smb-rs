@@ -6,6 +6,7 @@ pub struct TestEnv;
 
 impl TestEnv {
     pub const SERVER: &'static str = "SMB_RUST_TESTS_SERVER";
+    pub const DOMAIN_SERVER: &'static str = "SMB_RUST_TESTS_DOMAIN_SERVER";
     pub const KERBEROS_SERVER: &'static str = "SMB_RUST_TESTS_KERBEROS_SERVER";
     pub const USER: &'static str = "SMB_RUST_TESTS_USER_NAME";
     pub const DEFAULT_USER: &'static str = "LocalAdmin";
@@ -18,6 +19,23 @@ impl TestEnv {
 }
 
 pub struct TestConstants;
+
+#[derive(Clone, Copy, Debug)]
+pub enum TestServer {
+    Workgroup,
+    Domain,
+    Kerberos,
+}
+
+impl TestServer {
+    pub fn address(self) -> String {
+        match self {
+            Self::Workgroup => smb_tests_server(),
+            Self::Domain => smb_tests_domain_server(),
+            Self::Kerberos => smb_tests_kerberos_server(),
+        }
+    }
+}
 
 impl TestConstants {
     pub const DEFAULT_SHARE: &'static str = "MyShare";
@@ -43,7 +61,17 @@ pub async fn make_server_connection(
     share: &str,
     config: Option<ConnectionConfig>,
 ) -> smb::Result<(Client, UncPath)> {
+    make_server_connection_for(TestServer::Workgroup, share, config).await
+}
+
+#[maybe_async::maybe_async]
+pub async fn make_server_connection_for(
+    server: TestServer,
+    share: &str,
+    config: Option<ConnectionConfig>,
+) -> smb::Result<(Client, UncPath)> {
     make_server_connection_ex(
+        server.address(),
         share,
         ClientConfig {
             connection: config.unwrap_or(default_connection_config()),
@@ -55,7 +83,11 @@ pub async fn make_server_connection(
 
 /// Returns the server address for the tests connection.
 pub fn smb_tests_server() -> String {
-    var(TestEnv::SERVER).unwrap_or("127.0.0.1".to_string())
+    var(TestEnv::SERVER).unwrap_or("127.0.0.1:1445".to_string())
+}
+
+pub fn smb_tests_domain_server() -> String {
+    var(TestEnv::DOMAIN_SERVER).unwrap_or("127.0.0.1".to_string())
 }
 
 pub fn smb_tests_kerberos_server() -> String {
@@ -64,10 +96,10 @@ pub fn smb_tests_kerberos_server() -> String {
 
 #[maybe_async::maybe_async]
 pub async fn make_server_connection_ex(
+    server: String,
     share: &str,
     config: ClientConfig,
 ) -> smb::Result<(Client, UncPath)> {
-    let server = smb_tests_server();
     let user = var(TestEnv::USER).unwrap_or(TestEnv::DEFAULT_USER.to_string());
     let password = var(TestEnv::PASSWORD).unwrap_or(TestEnv::DEFAULT_PASSWORD.to_string());
     let smb = Client::new(config);

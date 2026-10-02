@@ -32,6 +32,7 @@ where
     state: SetupState,
 
     authenticator: Authenticator,
+    null_session: bool,
     upstream: &'a ChannelUpstream,
     conn_info: &'a Arc<ConnectionInfo>,
 
@@ -59,6 +60,7 @@ where
                 preauth_hash: conn_info.preauth_hash.clone(),
             },
             authenticator,
+            null_session: false,
             upstream,
             conn_info,
             new_channel_id,
@@ -85,15 +87,37 @@ where
         Ok(setup)
     }
 
+    pub async fn new_null(
+        upstream: &'a ChannelUpstream,
+        conn_info: &'a Arc<ConnectionInfo>,
+        new_channel_id: u32,
+    ) -> crate::Result<Self> {
+        Ok(Self {
+            state: SetupState::Initial {
+                preauth_hash: conn_info.preauth_hash.clone(),
+            },
+            authenticator: Authenticator::build_null(conn_info)?,
+            null_session: true,
+            upstream,
+            conn_info,
+            new_channel_id,
+            _phantom: std::marker::PhantomData,
+        })
+    }
+
     /// Common session setup logic.
     ///
     /// This function sets up a session against a connection, and it is somewhat abstract.
     /// by calling impl functions, this function's behavior is modified to support both new sessions and binding to existing sessions.
     pub(crate) async fn setup(&mut self) -> crate::Result<Arc<RwLock<SessionAndChannel>>> {
-        log::debug!(
-            "Setting up session for user {}.",
-            self.authenticator.user_name().inner()
-        );
+        if self.null_session {
+            log::debug!("Setting up a null session.");
+        } else {
+            log::debug!(
+                "Setting up session for user {}.",
+                self.authenticator.user_name().inner()
+            );
+        }
 
         let result = self
             ._setup_loop()
@@ -121,7 +145,11 @@ where
         loop {
             // Generate the next client token and determine the only valid SMB reply.
             let input_token = self.take_input_token()?;
-            let token = self.authenticator.next(&input_token).await?;
+            let token = if self.null_session {
+                self.authenticator.next_null(&input_token).await?
+            } else {
+                self.authenticator.next(&input_token).await?
+            };
             if token.is_empty() {
                 return Err(Error::InvalidState(
                     "SSPI produced no token for a session setup request.".into(),
@@ -153,6 +181,13 @@ where
     /// A key commits us to the final exchange: the preauthentication hash has
     /// been finalized and cannot accept another challenge/response round.
     fn expected_setup_status(&self) -> crate::Result<Status> {
+        if self.null_session {
+            return if self.authenticator.authentication_completed()? {
+                Ok(Status::Success)
+            } else {
+                Ok(Status::MoreProcessingRequired)
+            };
+        }
         match (
             self.authenticator.authentication_completed()?,
             self.authenticator.has_session_key()?,
@@ -213,7 +248,7 @@ where
         self.verify_setup_response(
             &mut response,
             &channel,
-            session_flags.is_guest_or_null_session(),
+            self.null_session || session_flags.is_guest_or_null_session(),
         )?;
 
         // A one-round Kerberos exchange has no session state until the signed
@@ -229,6 +264,10 @@ where
     }
 
     async fn complete_authentication(&mut self, response_token: &[u8]) -> crate::Result<()> {
+        if self.null_session {
+            return Ok(());
+        }
+
         if !self.authenticator.authentication_completed()? {
             let output = self.authenticator.next(response_token).await?;
             if !output.is_empty() {
@@ -403,7 +442,11 @@ where
     }
 
     fn session_key(&self) -> crate::Result<KeyToDerive> {
-        self.authenticator.session_key()
+        if self.null_session {
+            Ok([0; 16])
+        } else {
+            self.authenticator.session_key()
+        }
     }
 
     fn preauth_hash_value(&self) -> crate::Result<Option<PreauthHashValue>> {
@@ -683,6 +726,7 @@ impl SessionSetupProperties for SmbSessionNew {
             &setup.session_key()?,
             &setup.preauth_hash_value()?,
             setup.conn_info,
+            setup.null_session,
         )
     }
 
@@ -693,7 +737,11 @@ impl SessionSetupProperties for SmbSessionNew {
         log::trace!("Session setup successful");
         let result = setup.session()?.read().await?;
         let mut session = result.session.write().await?;
-        session.ready(setup.completed_flags()?, setup.conn_info)
+        session.ready(
+            setup.completed_flags()?,
+            setup.conn_info,
+            setup.null_session,
+        )
     }
 
     async fn init_session<T>(

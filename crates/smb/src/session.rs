@@ -85,6 +85,26 @@ impl Session {
         })
     }
 
+    pub(crate) async fn create_null(
+        upstream: &ChannelUpstream,
+        conn_info: &Arc<ConnectionInfo>,
+    ) -> crate::Result<Session> {
+        const FIRST_CHANNEL_ID: u32 = 0;
+
+        let setup_result =
+            SessionSetup::<SmbSessionNew>::new_null(upstream, conn_info, FIRST_CHANNEL_ID).await?;
+        let primary_channel = Self::_common_setup(setup_result).await?;
+        let handler =
+            HandlerReference::new(SessionMessageHandler::new(primary_channel.handler.clone()));
+
+        Ok(Session {
+            session_handler: handler,
+            primary_channel,
+            alt_channels: Default::default(),
+            channel_counter: AtomicU32::new(FIRST_CHANNEL_ID + 1),
+        })
+    }
+
     /// Binds an existing session to a new connection.
     ///
     /// Returns the channel ID (in the scope of the current session) of the newly created channel.
