@@ -13,8 +13,8 @@ impl TestEnv {
     pub const PASSWORD: &'static str = "SMB_RUST_TESTS_PASSWORD";
     pub const DEFAULT_PASSWORD: &'static str = "123456";
 
-    pub const GUEST_USER: &'static str = "Guest";
-    pub const GUEST_PASSWORD: &'static str = "123456";
+    pub const GUEST_USER: &'static str = "/GUEST";
+    pub const GUEST_PASSWORD: &'static str = "";
 }
 
 pub struct TestConstants;

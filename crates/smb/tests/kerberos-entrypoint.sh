@@ -10,8 +10,6 @@ if [ ! -f /var/lib/samba/private/sam.ldb ]; then
     samba-tool domain passwordsettings set --complexity=off --min-pwd-length=1
     samba-tool user create LocalAdmin 123456
     samba-tool user setexpiry LocalAdmin --noexpiry
-    samba-tool user setpassword Guest --newpassword=123456
-    samba-tool user enable Guest
     samba-tool spn add cifs/samba 'SAMBA$'
     samba-tool spn add cifs/samba.smb.test 'SAMBA$'
     samba-tool spn add cifs/localhost 'SAMBA$'
