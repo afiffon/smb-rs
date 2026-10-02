@@ -41,6 +41,34 @@ pub use state::{ChannelInfo, SessionInfo};
 
 use setup::*;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum SessionKind {
+    Authenticated,
+    Null,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum SessionCredentials {
+    Authenticated(sspi::AuthIdentity),
+    Null,
+}
+
+impl SessionCredentials {
+    pub(crate) fn kind(&self) -> SessionKind {
+        match self {
+            Self::Authenticated(_) => SessionKind::Authenticated,
+            Self::Null => SessionKind::Null,
+        }
+    }
+
+    pub(crate) fn identity(&self) -> Option<&sspi::AuthIdentity> {
+        match self {
+            Self::Authenticated(identity) => Some(identity),
+            Self::Null => None,
+        }
+    }
+}
+
 pub struct Session {
     primary_channel: Channel,
     alt_channels: RwLock<HashMap<u32, Channel>>,
@@ -57,14 +85,14 @@ impl Session {
     ///
     /// [Session::bind] may be used instead, to bind an existing session to a new connection.
     pub(crate) async fn create(
-        identity: sspi::AuthIdentity,
+        credentials: SessionCredentials,
         upstream: &ChannelUpstream,
         conn_info: &Arc<ConnectionInfo>,
     ) -> crate::Result<Session> {
         const FIRST_CHANNEL_ID: u32 = 0;
 
         let setup_result = SessionSetup::<SmbSessionNew>::new(
-            identity,
+            credentials,
             upstream,
             conn_info,
             FIRST_CHANNEL_ID,
@@ -74,26 +102,6 @@ impl Session {
 
         let primary_channel = Self::_common_setup(setup_result).await?;
 
-        let handler =
-            HandlerReference::new(SessionMessageHandler::new(primary_channel.handler.clone()));
-
-        Ok(Session {
-            session_handler: handler,
-            primary_channel,
-            alt_channels: Default::default(),
-            channel_counter: AtomicU32::new(FIRST_CHANNEL_ID + 1),
-        })
-    }
-
-    pub(crate) async fn create_null(
-        upstream: &ChannelUpstream,
-        conn_info: &Arc<ConnectionInfo>,
-    ) -> crate::Result<Session> {
-        const FIRST_CHANNEL_ID: u32 = 0;
-
-        let setup_result =
-            SessionSetup::<SmbSessionNew>::new_null(upstream, conn_info, FIRST_CHANNEL_ID).await?;
-        let primary_channel = Self::_common_setup(setup_result).await?;
         let handler =
             HandlerReference::new(SessionMessageHandler::new(primary_channel.handler.clone()));
 
@@ -145,7 +153,7 @@ impl Session {
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
         let setup_result = SessionSetup::<SmbSessionBind>::new(
-            identity,
+            SessionCredentials::Authenticated(identity),
             handler,
             conn_info,
             new_channel_id,

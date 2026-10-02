@@ -88,20 +88,17 @@ jobs:
         with:
           toolchain: ${{ matrix.rust }}
           override: true
-      # Building ignores the lock file, to prevent crates usage broken.
-      - name: Remove lock file
-        run: rm Cargo.lock
       - name: Build and Doc (Async)
         run: |
-          cargo build --no-default-features --features "async,${COMMON_FEATURES}"
+          cargo build --locked --no-default-features --features "async,${COMMON_FEATURES}"
 
       - name: Build and Doc (Multi-threaded)
         run: |
-          cargo build --no-default-features --features "multi_threaded,${COMMON_FEATURES}"
+          cargo build --locked --no-default-features --features "multi_threaded,${COMMON_FEATURES}"
 
       - name: Build and Doc (Single-threaded)
         run: |
-          cargo build --no-default-features --features "single_threaded,${COMMON_FEATURES}"
+          cargo build --locked --no-default-features --features "single_threaded,${COMMON_FEATURES}"
 
   publish:
     runs-on: ubuntu-latest

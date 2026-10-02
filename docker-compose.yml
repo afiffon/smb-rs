@@ -1,31 +1,27 @@
+x-samba-test: &samba-test
+  image: ghcr.io/afiffon/smb-tests:latest
+  build:
+    context: crates/smb/tests
+    dockerfile: Dockerfile
+    tags:
+      - ghcr.io/afiffon/smb-tests:latest
+    platforms:
+      - linux/amd64
+  networks:
+    - default
+    - default2
+  cap_add:
+    - SYS_ADMIN
+    - SYS_PTRACE
+
 services:
   workgroup-test:
-    image: ghcr.io/afiffon/smb-tests-workgroup:latest
-    build:
-      context: crates/smb/tests
-      dockerfile: Dockerfile
-      tags:
-        - ghcr.io/afiffon/smb-tests-workgroup:latest
-      platforms:
-        - linux/amd64
+    <<: *samba-test
     ports:
       - 1445:445
       - 1139:139
-    networks:
-      - default
-      - default2
-    cap_add:
-      - SYS_ADMIN
-      - SYS_PTRACE
     environment:
-      ACCOUNT_LocalAdmin: 123456
-      SAMBA_CONF_LOG_LEVEL: 1
-      SAMBA_VOLUME_CONFIG_MyShare: "[MyShare]; path=/shares/MyShare; read only = no; browseable = yes; create mask = 0777; directory mask = 0777; smb encrypt = desired"
-      SAMBA_VOLUME_CONFIG_PublicShare: "[PublicShare]; path=/shares/PublicShare; read only = no; browseable = yes; guest ok = yes; guest only = yes; smb encrypt = disabled"
-      SAMBA_GLOBAL_CONFIG_smb_SPACE_ports: "139 445"
-      SAMBA_GLOBAL_CONFIG_smb_SPACE_encrypt: "auto"
-      SAMBA_GLOBAL_CONFIG_map_SPACE_to_SPACE_guest: "Bad User"
-      SAMBA_GLOBAL_CONFIG_server_SPACE_multi_SPACE_channel_SPACE_support: "yes"
+      SAMBA_SERVER_ROLE: workgroup
     healthcheck:
       test: ["CMD-SHELL", "smbclient //localhost/MyShare -U 'LocalAdmin%123456' -c ls >/dev/null 2>&1 && smbclient //localhost/PublicShare -U '/GUEST%' -c ls >/dev/null 2>&1"]
       interval: 5s
@@ -34,14 +30,7 @@ services:
       start_period: 20s
 
   domain-test:
-    image: ghcr.io/afiffon/smb-tests-domain:latest
-    build:
-      context: crates/smb/tests
-      dockerfile: Dockerfile.domain
-      tags:
-        - ghcr.io/afiffon/smb-tests-domain:latest
-      platforms:
-        - linux/amd64
+    <<: *samba-test
     ports:
       - 88:88/tcp
       - 88:88/udp
@@ -53,9 +42,8 @@ services:
         aliases:
           - samba.smb.test
       default2: {}
-    cap_add:
-      - SYS_ADMIN
-      - SYS_PTRACE
+    environment:
+      SAMBA_SERVER_ROLE: domain
     healthcheck:
       test: ["CMD-SHELL", "smbclient //samba.smb.test/KerberosShare --use-kerberos=required -U 'LocalAdmin%123456' -c ls >/dev/null 2>&1 && smbclient //localhost/PublicShare -N -c ls >/dev/null 2>&1"]
       interval: 5s

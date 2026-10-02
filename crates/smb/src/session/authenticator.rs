@@ -3,6 +3,7 @@ use std::sync::Arc;
 use crate::Error;
 use crate::connection::AuthMethodsConfig;
 use crate::connection::connection_info::ConnectionInfo;
+use crate::session::SessionCredentials;
 use maybe_async::maybe_async;
 use sspi::{
     AcquireCredentialsHandleResult, AuthIdentity, BufferType, ClientRequestFlags, CredentialUse,
@@ -22,21 +23,27 @@ pub struct Authenticator {
 }
 
 impl Authenticator {
-    pub fn build_null(conn_info: &Arc<ConnectionInfo>) -> crate::Result<Authenticator> {
-        // sspi-rs requires a non-empty identity to produce the initial SPNEGO
-        // negotiation token. The second leg is replaced with an anonymous NTLM
-        // authenticate message in `next_null`.
-        Self::build(
-            AuthIdentity {
-                username: Username::parse("/GUEST")
-                    .map_err(|error| Error::SspiError(error.into()))?,
-                password: String::new().into(),
-            },
-            conn_info,
-        )
+    pub fn build(
+        credentials: &SessionCredentials,
+        conn_info: &Arc<ConnectionInfo>,
+    ) -> crate::Result<Authenticator> {
+        let identity = match credentials {
+            SessionCredentials::Authenticated(identity) => identity.clone(),
+            SessionCredentials::Null => {
+                // sspi-rs currently requires a non-empty identity to produce the
+                // initial SPNEGO negotiation token. The second leg is replaced in
+                // `next_null`; remove this workaround once SSPI supports anonymous NTLM.
+                AuthIdentity {
+                    username: Username::parse("/GUEST")
+                        .map_err(|error| Error::SspiError(error.into()))?,
+                    password: String::new().into(),
+                }
+            }
+        };
+        Self::build_identity(identity, conn_info)
     }
 
-    pub fn build(
+    fn build_identity(
         identity: AuthIdentity,
         conn_info: &Arc<ConnectionInfo>,
     ) -> crate::Result<Authenticator> {

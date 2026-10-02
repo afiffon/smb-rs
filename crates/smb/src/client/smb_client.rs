@@ -1,4 +1,5 @@
 use crate::ConnectionConfig;
+use crate::session::SessionCredentials;
 use crate::{Connection, Error, FileCreateArgs, Pipe, Resource, Session, Tree, sync_helpers::*};
 use maybe_async::maybe_async;
 use smb_msg::{NetworkInterfaceInfo, ReferralEntry, ReferralEntryValue, Status};
@@ -89,21 +90,6 @@ struct ClientConectedTree {
     session: Arc<Session>,
     tree: Arc<Tree>,
     credentials: Option<AuthIdentity>,
-}
-
-#[derive(Clone, Copy)]
-enum ClientCredentials<'a> {
-    Authenticated(&'a AuthIdentity),
-    Null,
-}
-
-impl<'a> ClientCredentials<'a> {
-    fn identity(self) -> Option<&'a AuthIdentity> {
-        match self {
-            Self::Authenticated(identity) => Some(identity),
-            Self::Null => None,
-        }
-    }
 }
 
 #[derive(Clone)]
@@ -221,7 +207,7 @@ impl Client {
             password: Secret::from(password),
         };
 
-        self._share_connect(target, ClientCredentials::Authenticated(&identity))
+        self._share_connect(target, SessionCredentials::Authenticated(identity.clone()))
             .await?;
 
         // Establish an additional channel if multi-channel is enabled.
@@ -264,7 +250,7 @@ impl Client {
     /// [`ConnectionConfig::allow_unsigned_guest_access`] because null sessions
     /// do not have a session key for message signing.
     pub async fn share_connect_null(&self, target: &UncPath) -> crate::Result<()> {
-        self._share_connect(target, ClientCredentials::Null).await
+        self._share_connect(target, SessionCredentials::Null).await
     }
 
     /// (Internal)
@@ -274,7 +260,7 @@ impl Client {
     async fn _share_connect(
         &self,
         target: &UncPath,
-        credentials: ClientCredentials<'_>,
+        credentials: SessionCredentials,
     ) -> crate::Result<()> {
         if target.share().is_none() {
             return Err(crate::Error::InvalidArgument(
@@ -295,23 +281,20 @@ impl Client {
 
         let connection = self.connect(target.server()).await?;
 
-        let session = {
-            let session = match credentials {
-                ClientCredentials::Authenticated(identity) => {
-                    let session = connection.authenticate(identity.clone()).await?;
-                    log::debug!(
-                        "Successfully authenticated to {} as {}",
-                        target.server(),
-                        identity.username.account_name()
-                    );
-                    session
+        let (session, identity) = {
+            let authentication_description = match &credentials {
+                SessionCredentials::Authenticated(identity) => {
+                    format!("as {}", identity.username.account_name())
                 }
-                ClientCredentials::Null => {
-                    let session = connection.authenticate_null().await?;
-                    log::debug!("Established a null session to {}", target.server());
-                    session
-                }
+                SessionCredentials::Null => "with a null session".to_owned(),
             };
+            let identity = credentials.identity().cloned();
+            let session = connection.authenticate_with(credentials).await?;
+            log::debug!(
+                "Successfully authenticated to {} {}",
+                target.server(),
+                authentication_description
+            );
             let session = Arc::new(session);
 
             let address = TransportUtils::parse_socket_address(target.server())?;
@@ -327,16 +310,12 @@ impl Client {
             })
             .await?;
 
-            session
+            (session, identity)
         };
 
         let tree = session.tree_connect(&target).await?;
 
-        let credentials = if tree.is_dfs_root()? {
-            credentials.identity().cloned()
-        } else {
-            None
-        };
+        let credentials = if tree.is_dfs_root()? { identity } else { None };
 
         let connect_share_info = ClientConectedTree {
             session,
@@ -637,14 +616,20 @@ impl Client {
             username: sspi::Username::parse(username).map_err(|e| Error::SspiError(e.into()))?,
             password: Secret::from(password),
         };
-        self._share_connect(&ipc_share, ClientCredentials::Authenticated(&identity))
-            .await
+        self._share_connect(
+            &ipc_share,
+            SessionCredentials::Authenticated(identity.clone()),
+        )
+        .await
     }
 
     pub async fn _ipc_connect(&self, server: &str, identity: &AuthIdentity) -> crate::Result<()> {
         let ipc_share = UncPath::ipc_share(server)?;
-        self._share_connect(&ipc_share, ClientCredentials::Authenticated(identity))
-            .await
+        self._share_connect(
+            &ipc_share,
+            SessionCredentials::Authenticated(identity.clone()),
+        )
+        .await
     }
 
     /// Opens a named pipe on the specified server.
@@ -815,7 +800,10 @@ impl<'a> DfsResolver<'a> {
             // Try opening the share. Log failure, and try next ref.
             if let Err(e) = self
                 .client
-                ._share_connect(ref_unc_path, ClientCredentials::Authenticated(&dfs_creds))
+                ._share_connect(
+                    ref_unc_path,
+                    SessionCredentials::Authenticated(dfs_creds.clone()),
+                )
                 .await
             {
                 log::error!("Failed to open DFS referral: {e}",);
