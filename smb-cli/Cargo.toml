@@ -17,16 +17,16 @@ futures = { workspace = true, optional = true }
 # CLI & logging
 indicatif = "0.18.0"
 clap = { version = "4.5.27", features = ["derive"] }
-ctrlc = { version = "3.5" }
+ctrlc = { version = "3.5", optional = true }
 env_logger = "0.11.6"
 log = { workspace = true }
 
 [features]
 default = ["async"]
 
-async = ["dep:tokio", "dep:futures-util", "dep:futures"]
+async = ["dep:tokio", "dep:futures-util", "dep:futures", "dep:ctrlc"]
 single_threaded = ["maybe-async/is_sync"]
-multi_threaded = ["maybe-async/is_sync"]
+multi_threaded = ["maybe-async/is_sync", "dep:ctrlc"]
 
 netbios-transport = []
 quic = []

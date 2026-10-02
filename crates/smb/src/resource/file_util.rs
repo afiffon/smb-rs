@@ -1,4 +1,3 @@
-use crate::sync_helpers::*;
 use maybe_async::*;
 
 /// This trait describes an object that can perform read operations at a specific offset,
@@ -131,6 +130,7 @@ pub trait SetLen {
 #[cfg(feature = "std-fs-impls")]
 mod impls {
     use super::*;
+    use crate::sync_helpers::Mutex;
 
     #[cfg(not(feature = "async"))]
     use std::{

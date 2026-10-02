@@ -20,3 +20,33 @@ Then, you can run the tests as usual, using `cargo test`.
 > and use the `SMB_RUST_TESTS_SERVER=HOST:PORT` environment variable
 > to specify the new port.
 > The same goes for the IP address, if necessary.
+
+The test fixture starts two Samba servers. `workgroup-test` is a standalone
+workgroup server on host port 1445 and runs the general integration suite.
+`domain-test` is a disposable `SMB.TEST` Active Directory domain controller on
+host port 445. Authentication and dialect coverage runs against both servers;
+null-session and Kerberos coverage runs against the domain server. The fixed
+test identity is `LocalAdmin` with password `123456`.
+
+Start it with:
+
+```bash
+docker compose up -d --build --wait workgroup-test domain-test
+```
+
+The image registers `cifs/localhost`, so the complete local suite needs only the
+KDC address. No `kinit`, hosts-file change, or separate Kerberos test command is
+required:
+
+```bash
+SSPI_KDC_URL=tcp://127.0.0.1:88 cargo test -p smb --features kerberos
+```
+
+The normal tests explicitly use NTLM, while Kerberos tests disable NTLM fallback
+and use `KerberosShare`. CI enables the `kerberos` feature in its regular test
+matrix, so both paths and the guest share run every time. Set
+`SMB_RUST_TESTS_KERBEROS_SERVER` only when the KDC's SMB hostname is not
+`localhost`; the hostname must have a matching CIFS service principal.
+
+Ports 88 (TCP and UDP), 139, 445, 1139, and 1445 must be available. Recreating
+the containers provisions a fresh domain and discards their test files.

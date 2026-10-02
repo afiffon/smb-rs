@@ -1,4 +1,5 @@
 use crate::ConnectionConfig;
+use crate::session::SessionCredentials;
 use crate::{Connection, Error, FileCreateArgs, Pipe, Resource, Session, Tree, sync_helpers::*};
 use maybe_async::maybe_async;
 use smb_msg::{NetworkInterfaceInfo, ReferralEntry, ReferralEntryValue, Status};
@@ -206,7 +207,8 @@ impl Client {
             password: Secret::from(password),
         };
 
-        self._share_connect(target, &identity).await?;
+        self._share_connect(target, SessionCredentials::Authenticated(identity.clone()))
+            .await?;
 
         // Establish an additional channel if multi-channel is enabled.
         let mchannel_map = self._setup_multi_channel(target, &identity).await;
@@ -242,11 +244,24 @@ impl Client {
         Ok(())
     }
 
+    /// Connects to a share through an anonymous SMB null session.
+    ///
+    /// The connection configuration must set
+    /// [`ConnectionConfig::allow_unsigned_guest_access`] because null sessions
+    /// do not have a session key for message signing.
+    pub async fn share_connect_null(&self, target: &UncPath) -> crate::Result<()> {
+        self._share_connect(target, SessionCredentials::Null).await
+    }
+
     /// (Internal)
     ///
     /// Performs the actual share connection logic,
     /// without setting up multi-channel.
-    async fn _share_connect(&self, target: &UncPath, identity: &AuthIdentity) -> crate::Result<()> {
+    async fn _share_connect(
+        &self,
+        target: &UncPath,
+        credentials: SessionCredentials,
+    ) -> crate::Result<()> {
         if target.share().is_none() {
             return Err(crate::Error::InvalidArgument(
                 "UNC path does not contain a share name.".to_string(),
@@ -266,12 +281,19 @@ impl Client {
 
         let connection = self.connect(target.server()).await?;
 
-        let session = {
-            let session = connection.authenticate(identity.clone()).await?;
+        let (session, identity) = {
+            let authentication_description = match &credentials {
+                SessionCredentials::Authenticated(identity) => {
+                    format!("as {}", identity.username.account_name())
+                }
+                SessionCredentials::Null => "with a null session".to_owned(),
+            };
+            let identity = credentials.identity().cloned();
+            let session = connection.authenticate_with(credentials).await?;
             log::debug!(
-                "Successfully authenticated to {} as {}",
+                "Successfully authenticated to {} {}",
                 target.server(),
-                identity.username.account_name()
+                authentication_description
             );
             let session = Arc::new(session);
 
@@ -288,16 +310,12 @@ impl Client {
             })
             .await?;
 
-            session
+            (session, identity)
         };
 
         let tree = session.tree_connect(&target).await?;
 
-        let credentials = if tree.is_dfs_root()? {
-            Some(identity.to_owned())
-        } else {
-            None
-        };
+        let credentials = if tree.is_dfs_root()? { identity } else { None };
 
         let connect_share_info = ClientConectedTree {
             session,
@@ -598,12 +616,20 @@ impl Client {
             username: sspi::Username::parse(username).map_err(|e| Error::SspiError(e.into()))?,
             password: Secret::from(password),
         };
-        self._share_connect(&ipc_share, &identity).await
+        self._share_connect(
+            &ipc_share,
+            SessionCredentials::Authenticated(identity.clone()),
+        )
+        .await
     }
 
     pub async fn _ipc_connect(&self, server: &str, identity: &AuthIdentity) -> crate::Result<()> {
         let ipc_share = UncPath::ipc_share(server)?;
-        self._share_connect(&ipc_share, identity).await
+        self._share_connect(
+            &ipc_share,
+            SessionCredentials::Authenticated(identity.clone()),
+        )
+        .await
     }
 
     /// Opens a named pipe on the specified server.
@@ -772,7 +798,14 @@ impl<'a> DfsResolver<'a> {
         // Open the next DFS referral. Try each referral path, since some may be down.
         for ref_unc_path in dfs_ref_paths.iter() {
             // Try opening the share. Log failure, and try next ref.
-            if let Err(e) = self.client._share_connect(ref_unc_path, &dfs_creds).await {
+            if let Err(e) = self
+                .client
+                ._share_connect(
+                    ref_unc_path,
+                    SessionCredentials::Authenticated(dfs_creds.clone()),
+                )
+                .await
+            {
                 log::error!("Failed to open DFS referral: {e}",);
                 continue;
             };

@@ -138,40 +138,6 @@ impl ChannelMessageHandler {
         Ok(())
     }
 
-    /// **Insecure! Insecure! Insecure!**
-    ///
-    /// Same as [`ChannelMessageHandler::recvo`], but possible skips security validation.
-    /// # Arguments
-    /// * `options` - The options for receiving the message.
-    /// * `skip_security_validation` - Whether to skip security validation of the incoming message.
-    ///   This shall only be used when authentication is still being set up.
-    /// # Returns
-    /// An [`IncomingMessage`] if the message is valid, or an error if the message is invalid.
-    #[maybe_async]
-    pub(crate) async fn recvo_internal(
-        &self,
-        options: ReceiveOptions<'_>,
-        skip_security_validation: bool,
-    ) -> crate::Result<IncomingMessage> {
-        let incoming = self.upstream.recvo(options).await?;
-
-        if !skip_security_validation {
-            self._verify_incoming(&incoming).await?;
-        } else {
-            // Note: this is performed here for extra security,
-            // while we could have just checked the session state, let's require
-            // the caller to explicitly state that it is okay to skip security validation.
-            let session = self.session_state.read().await?;
-            let session = session.session.read().await?;
-            assert!(
-                session.is_initial(),
-                "Incorrect internal state: security checks are never skipped, unless the session is still being set up!"
-            );
-        }
-
-        Ok(incoming)
-    }
-
     /// (Internal)
     ///
     /// Assures the sessions may not be used anymore.

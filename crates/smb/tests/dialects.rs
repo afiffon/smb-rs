@@ -1,4 +1,4 @@
-use common::{TestConstants, make_server_connection};
+use common::{TestConstants, TestServer, make_server_connection_for};
 #[cfg(feature = "async")]
 use futures_util::StreamExt;
 use serial_test::serial;
@@ -19,8 +19,17 @@ macro_rules! basic_test {
                     async(feature = "async", tokio::test(flavor = "multi_thread"))
                 ))]
                 #[serial]
-                pub async fn [<test_smbint_ $dialect:lower _e $encrypt_mode:lower>]() -> Result<(), Box<dyn std::error::Error>> {
-                    test_smb_integration_dialect_encrpytion_mode(Dialect::$dialect, EncryptionMode::$encrypt_mode).await
+                pub async fn [<test_smbint_workgroup_ $dialect:lower _e $encrypt_mode:lower>]() -> Result<(), Box<dyn std::error::Error>> {
+                    test_smb_integration_dialect_encrpytion_mode(TestServer::Workgroup, Dialect::$dialect, EncryptionMode::$encrypt_mode).await
+                }
+
+                #[test_log::test(maybe_async::test(
+                    not(feature = "async"),
+                    async(feature = "async", tokio::test(flavor = "multi_thread"))
+                ))]
+                #[serial]
+                pub async fn [<test_smbint_domain_ $dialect:lower _e $encrypt_mode:lower>]() -> Result<(), Box<dyn std::error::Error>> {
+                    test_smb_integration_dialect_encrpytion_mode(TestServer::Domain, Dialect::$dialect, EncryptionMode::$encrypt_mode).await
                 }
             }
         )*
@@ -44,10 +53,11 @@ basic_test!([Smb0202, Smb021], [Disabled]);
 
 #[maybe_async::maybe_async]
 async fn test_smb_integration_dialect_encrpytion_mode(
+    server: TestServer,
     force_dialect: Dialect,
     encryption_mode: EncryptionMode,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    log::info!("Testing with dialect: {force_dialect:?}, enc? {encryption_mode:?}",);
+    log::info!("Testing {server:?} with dialect: {force_dialect:?}, enc? {encryption_mode:?}",);
 
     let connection_config = ConnectionConfig {
         min_dialect: Some(force_dialect),
@@ -56,8 +66,12 @@ async fn test_smb_integration_dialect_encrpytion_mode(
         ..Default::default()
     };
 
-    let (client, share_path) =
-        make_server_connection(TestConstants::DEFAULT_SHARE, Some(connection_config)).await?;
+    let (client, share_path) = make_server_connection_for(
+        server,
+        TestConstants::DEFAULT_SHARE,
+        Some(connection_config),
+    )
+    .await?;
 
     const TEST_FILE: &str = "test.txt";
     const TEST_DATA: &[u8] = b"Hello, World!";

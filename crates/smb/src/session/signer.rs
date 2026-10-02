@@ -6,6 +6,7 @@ use std::io::Cursor;
 use crate::{Error, crypto};
 use smb_msg::Header;
 use smb_transport::IoVec;
+use subtle::ConstantTimeEq;
 
 /// A struct for writing and verifying SMB message signatures.
 ///
@@ -25,7 +26,11 @@ impl MessageSigner {
     /// This function assumes that the provided raw_data contains the plain message header at the beginning of the first buffer.
     pub fn verify_signature(&mut self, header: &mut Header, data: &IoVec) -> crate::Result<()> {
         let calculated_signature = self._calculate_signature(header, data)?;
-        if calculated_signature != header.signature {
+        if !bool::from(
+            calculated_signature
+                .to_le_bytes()
+                .ct_eq(&header.signature.to_le_bytes()),
+        ) {
             return Err(Error::SignatureVerificationFailed);
         }
         Ok(())

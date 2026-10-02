@@ -3,11 +3,12 @@ use std::sync::Arc;
 use crate::Error;
 use crate::connection::AuthMethodsConfig;
 use crate::connection::connection_info::ConnectionInfo;
+use crate::session::SessionCredentials;
 use maybe_async::maybe_async;
 use sspi::{
     AcquireCredentialsHandleResult, AuthIdentity, BufferType, ClientRequestFlags, CredentialUse,
-    DataRepresentation, InitializeSecurityContextResult, Negotiate, SecurityBuffer, Sspi,
-    ntlm::NtlmConfig,
+    DataRepresentation, InitializeSecurityContextResult, Negotiate, SecurityBuffer, SecurityStatus,
+    Sspi, ntlm::NtlmConfig,
 };
 use sspi::{CredentialsBuffers, NegotiateConfig, SspiImpl, Username};
 
@@ -23,6 +24,26 @@ pub struct Authenticator {
 
 impl Authenticator {
     pub fn build(
+        credentials: &SessionCredentials,
+        conn_info: &Arc<ConnectionInfo>,
+    ) -> crate::Result<Authenticator> {
+        let identity = match credentials {
+            SessionCredentials::Authenticated(identity) => identity.clone(),
+            SessionCredentials::Null => {
+                // sspi-rs currently requires a non-empty identity to produce the
+                // initial SPNEGO negotiation token. The second leg is replaced in
+                // `next_null`; remove this workaround once SSPI supports anonymous NTLM.
+                AuthIdentity {
+                    username: Username::parse("/GUEST")
+                        .map_err(|error| Error::SspiError(error.into()))?,
+                    password: String::new().into(),
+                }
+            }
+        };
+        Self::build_identity(identity, conn_info)
+    }
+
+    fn build_identity(
         identity: AuthIdentity,
         conn_info: &Arc<ConnectionInfo>,
     ) -> crate::Result<Authenticator> {
@@ -89,12 +110,18 @@ impl Authenticator {
         format!("cifs/{server_fqdn}")
     }
 
-    fn get_context_requirements() -> ClientRequestFlags {
-        ClientRequestFlags::DELEGATE
+    fn get_context_requirements(&self) -> ClientRequestFlags {
+        let mut requirements = ClientRequestFlags::DELEGATE
             | ClientRequestFlags::MUTUAL_AUTH
             | ClientRequestFlags::INTEGRITY
-            | ClientRequestFlags::FRAGMENT_TO_FIT
-            | ClientRequestFlags::USE_SESSION_KEY
+            | ClientRequestFlags::FRAGMENT_TO_FIT;
+        // For Kerberos, USE_SESSION_KEY requests user-to-user authentication,
+        // not access to the established session key. SMB uses a CIFS service
+        // ticket instead. Retain the flag for NTLM-only SPNEGO MIC exchange.
+        if !self.ssp.negotiated_protocol().is_kerberos() {
+            requirements |= ClientRequestFlags::USE_SESSION_KEY;
+        }
+        requirements
     }
 
     const SSPI_REQ_DATA_REPRESENTATION: DataRepresentation = DataRepresentation::Native;
@@ -107,11 +134,12 @@ impl Authenticator {
 
         let mut output_buffer = vec![SecurityBuffer::new(Vec::new(), BufferType::Token)];
         let target_name = Self::make_sspi_target_name(&self.server_hostname);
+        let context_requirements = self.get_context_requirements();
         let mut builder = self
             .ssp
             .initialize_security_context()
             .with_credentials_handle(&mut self.cred_handle.credentials_handle)
-            .with_context_requirements(Self::get_context_requirements())
+            .with_context_requirements(context_requirements)
             .with_target_data_representation(Self::SSPI_REQ_DATA_REPRESENTATION)
             .with_output(&mut output_buffer);
 
@@ -165,6 +193,24 @@ impl Authenticator {
         Ok(output_buffer)
     }
 
+    #[maybe_async]
+    pub async fn next_null(&mut self, gss_token: &[u8]) -> crate::Result<Vec<u8>> {
+        if self.current_state.is_none() {
+            return self.next(gss_token).await;
+        }
+        if self.authentication_completed()? {
+            return Err(Error::InvalidState("Authentication already done.".into()));
+        }
+
+        let token = make_anonymous_spnego_token(gss_token)?;
+        self.current_state = Some(InitializeSecurityContextResult {
+            status: SecurityStatus::Ok,
+            flags: sspi::ClientResponseFlags::empty(),
+            expiry: None,
+        });
+        Ok(token)
+    }
+
     /// This method, despite being very similar to [`sspi::generator::Generator::resolve_with_async_client`],
     /// adds the `Send` bound to the network client, which is required for our async code.
     ///
@@ -198,6 +244,77 @@ impl Authenticator {
         let ntlm_config = if config.ntlm { "ntlm" } else { "!ntlm" };
         format!("{ntlm_config},{krb_pku2u_config}")
     }
+}
+
+fn make_anonymous_spnego_token(challenge: &[u8]) -> crate::Result<Vec<u8>> {
+    // MS-NLMP permits anonymous authentication with empty user/domain/NT
+    // response fields and either an empty LM response or one zero byte. Samba's
+    // anonymous backend accepts both forms; use the one-byte form used by
+    // Windows clients.
+    const NTLM_SIGNATURE: &[u8; 8] = b"NTLMSSP\0";
+    const NEGOTIATE_UNICODE: u32 = 0x0000_0001;
+    const REQUEST_TARGET: u32 = 0x0000_0004;
+    const NEGOTIATE_NTLM: u32 = 0x0000_0200;
+    const NEGOTIATE_ANONYMOUS: u32 = 0x0000_0800;
+    const EXTENDED_SESSION_SECURITY: u32 = 0x0008_0000;
+    const TARGET_INFO: u32 = 0x0080_0000;
+    const NEGOTIATE_128: u32 = 0x2000_0000;
+    const NEGOTIATE_56: u32 = 0x8000_0000;
+    const SUPPORTED_FLAGS: u32 = NEGOTIATE_UNICODE
+        | REQUEST_TARGET
+        | NEGOTIATE_NTLM
+        | EXTENDED_SESSION_SECURITY
+        | TARGET_INFO
+        | NEGOTIATE_128
+        | NEGOTIATE_56;
+
+    let challenge_offset = challenge
+        .windows(NTLM_SIGNATURE.len())
+        .position(|window| window == NTLM_SIGNATURE)
+        .ok_or_else(|| Error::InvalidMessage("NTLM challenge token is missing.".into()))?;
+    let challenge_flags = challenge
+        .get(challenge_offset + 20..challenge_offset + 24)
+        .ok_or_else(|| Error::InvalidMessage("NTLM challenge token is truncated.".into()))?;
+    let flags = u32::from_le_bytes(challenge_flags.try_into().unwrap()) & SUPPORTED_FLAGS
+        | NEGOTIATE_ANONYMOUS;
+
+    const HEADER_SIZE: u32 = 64;
+    let mut authenticate = Vec::with_capacity(HEADER_SIZE as usize + 1);
+    authenticate.extend_from_slice(NTLM_SIGNATURE);
+    authenticate.extend_from_slice(&3u32.to_le_bytes());
+    write_security_buffer(&mut authenticate, 1, HEADER_SIZE);
+    for _ in 0..5 {
+        write_security_buffer(&mut authenticate, 0, HEADER_SIZE + 1);
+    }
+    authenticate.extend_from_slice(&flags.to_le_bytes());
+    authenticate.push(0);
+
+    let neg_result = der_wrap(0xa0, vec![0x0a, 0x01, 0x00]);
+    let response_token = der_wrap(0xa2, der_wrap(0x04, authenticate));
+    let mut sequence = neg_result;
+    sequence.extend(response_token);
+    Ok(der_wrap(0xa1, der_wrap(0x30, sequence)))
+}
+
+fn write_security_buffer(buffer: &mut Vec<u8>, length: u16, offset: u32) {
+    buffer.extend_from_slice(&length.to_le_bytes());
+    buffer.extend_from_slice(&length.to_le_bytes());
+    buffer.extend_from_slice(&offset.to_le_bytes());
+}
+
+fn der_wrap(tag: u8, value: Vec<u8>) -> Vec<u8> {
+    let mut result = Vec::with_capacity(value.len() + 4);
+    result.push(tag);
+    if value.len() < 0x80 {
+        result.push(value.len() as u8);
+    } else {
+        let bytes = value.len().to_be_bytes();
+        let first = bytes.iter().position(|byte| *byte != 0).unwrap();
+        result.push(0x80 | (bytes.len() - first) as u8);
+        result.extend_from_slice(&bytes[first..]);
+    }
+    result.extend(value);
+    result
 }
 
 #[cfg(test)]

@@ -50,6 +50,7 @@ hmac = "^0.13"
 sha2 = "^0.11"
 kbkdf = { version = "0.1.0-rc.1" }
 crypto-common = { version = "0.2.1" }
+subtle = "2.6"
 aes = "^0.9"
 aes-gcm = { version = "^0.11", optional = true }
 cmac = { version = "^0.8", optional = true }
