@@ -37,6 +37,7 @@ impl SessionAlgosFactory {
         session_key: &KeyToDerive,
         preauth_hash: &Option<PreauthHashValue>,
         info: &ConnectionInfo,
+        encryption_allowed: bool,
     ) -> crate::Result<SessionAlgos> {
         if (info.negotiation.dialect_rev == Dialect::Smb0311) != preauth_hash.is_some() {
             return Err(crate::Error::InvalidMessage(
@@ -54,13 +55,13 @@ impl SessionAlgosFactory {
             );
         }
 
-        if info.negotiation.dialect_rev.is_smb3() {
-            Self::smb3xx_make_ciphers(session_key, preauth_hash, info)
-        } else {
+        if !encryption_allowed || !info.negotiation.dialect_rev.is_smb3() {
             Ok(SessionAlgos {
                 encryptor: None,
                 decryptor: None,
             })
+        } else {
+            Self::smb3xx_make_ciphers(session_key, preauth_hash, info)
         }
     }
 
@@ -316,13 +317,20 @@ impl SessionInfo {
             ));
         }
 
-        let algos = SessionAlgosFactory::new_session(session_key, preauth_hash, info)?;
+        let encryption_allowed = self.session_kind != SessionKind::Null;
+        let algos =
+            SessionAlgosFactory::new_session(session_key, preauth_hash, info, encryption_allowed)?;
         log::trace!("Session algos set up: {algos:?}");
 
         let info_allows_unsigned = info.config.allow_unsigned_guest_access;
         if self.session_kind == SessionKind::Null && !info_allows_unsigned {
             return Err(crate::Error::InvalidMessage(
                 "Signing may be disabled to allow guest or anonymous logins.".to_string(),
+            ));
+        }
+        if self.session_kind == SessionKind::Null && info.config.encryption_mode.is_required() {
+            return Err(crate::Error::InvalidMessage(
+                "Encryption cannot be required for an anonymous session.".to_string(),
             ));
         }
 
@@ -352,6 +360,11 @@ impl SessionInfo {
         if !conn_info.config.allow_unsigned_guest_access && guest_or_null_session {
             return Err(crate::Error::InvalidMessage(
                 "Signing may be disabled to allow guest or anonymous logins.".to_string(),
+            ));
+        }
+        if guest_or_null_session && flags.encrypt_data() {
+            return Err(crate::Error::InvalidMessage(
+                "Encryption cannot be enabled for a guest or anonymous session.".to_string(),
             ));
         }
 
@@ -384,11 +397,17 @@ impl SessionInfo {
         };
 
         self.state = match self.state.take() {
-            Some(SessionInfoState::SettingUp { algos, .. }) => Some(SessionInfoState::Ready {
-                algos,
-                flags,
-                force_encryption,
-            }),
+            Some(SessionInfoState::SettingUp { mut algos, .. }) => {
+                if guest_or_null_session {
+                    algos.encryptor = None;
+                    algos.decryptor = None;
+                }
+                Some(SessionInfoState::Ready {
+                    algos,
+                    flags,
+                    force_encryption,
+                })
+            }
             _ => unreachable!(),
         };
         log::debug!("Session {} flags set: {:?}", self.session_id, flags);

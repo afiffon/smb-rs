@@ -311,6 +311,17 @@ impl SessionMessageHandler {
         Ok(())
     }
 
+    pub(crate) async fn allows_unsigned(&self) -> crate::Result<bool> {
+        self.primary_channel
+            .session_state()
+            .read()
+            .await?
+            .session
+            .read()
+            .await?
+            .allow_unsigned()
+    }
+
     /// Logs off the session and invalidates it.
     ///
     /// # Notes

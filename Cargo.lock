@@ -2751,6 +2751,7 @@ dependencies = [
  "smb-rpc",
  "smb-transport",
  "sspi",
+ "subtle",
  "temp-env",
  "test-log",
  "thiserror 2.0.20",

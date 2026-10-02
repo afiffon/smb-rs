@@ -83,6 +83,12 @@ impl Tree {
                 "Server requires encryption, but client does not support it".to_string(),
             ));
         }
+        if content.share_flags.encrypt_data() && upstream.allows_unsigned().await? {
+            return Err(Error::InvalidMessage(
+                "Encryption cannot be enabled for a guest or anonymous share connection."
+                    .to_string(),
+            ));
+        }
 
         let tree_id = response
             .message
