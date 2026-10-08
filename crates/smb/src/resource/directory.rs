@@ -728,9 +728,13 @@ pub mod iter_stream {
                     }
                 }
 
-                // Notify the stream that a new batch is available
-                notify_fetch_next.notify_waiters();
-                notify_fetch_next.notified().await;
+                // The consumer requests the next batch with `notify_one`, which is
+                // remembered if this task is not waiting yet. Stop if the stream was
+                // dropped, so this task does not hold the directory open forever.
+                tokio::select! {
+                    _ = notify_fetch_next.notified() => {}
+                    _ = sender.closed() => return,
+                }
             }
         }
     }
@@ -746,7 +750,7 @@ pub mod iter_stream {
             match this.receiver.poll_recv(cx) {
                 Poll::Ready(Some(value)) => {
                     if this.receiver.is_empty() {
-                        this.notify_fetch_next.notify_waiters() // Notify that batch is done
+                        this.notify_fetch_next.notify_one() // Request the next batch
                     }
                     Poll::Ready(Some(value))
                 }
