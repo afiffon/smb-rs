@@ -42,7 +42,7 @@ pub use tree::{DfsRootTreeRef, Tree};
 
 pub use smb_dtyp::*;
 pub use smb_fscc::*;
-pub use smb_msg::*;
+pub use smb_msg::{create::ShareAccessFlags, *};
 pub use smb_transport as transport;
 
 /// SMB Result type
