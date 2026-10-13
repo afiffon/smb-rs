@@ -5,7 +5,11 @@ use binrw::prelude::*;
 use maybe_async::*;
 use smb_msg::*;
 use smb_transport::IoVec;
-use std::{collections::HashMap, io::Cursor, sync::Arc};
+use std::{
+    collections::{HashMap, hash_map::Entry},
+    io::Cursor,
+    sync::Arc,
+};
 
 use super::connection_info::ConnectionInfo;
 
@@ -33,6 +37,55 @@ struct TransformerConfig {
 
 #[maybe_async(AFIT)]
 impl Transformer {
+    fn register_session(
+        sessions: &mut HashMap<u64, Arc<RwLock<SessionAndChannel>>>,
+        session_id: u64,
+        session: &Arc<RwLock<SessionAndChannel>>,
+    ) -> crate::Result<()> {
+        match sessions.entry(session_id) {
+            Entry::Vacant(entry) => {
+                entry.insert(session.clone());
+                Ok(())
+            }
+            Entry::Occupied(_) => Err(crate::Error::InvalidState(format!(
+                "Session {session_id} is already registered!"
+            ))),
+        }
+    }
+
+    fn unregister_session(
+        sessions: &mut HashMap<u64, Arc<RwLock<SessionAndChannel>>>,
+        session_id: u64,
+        session: &Arc<RwLock<SessionAndChannel>>,
+    ) -> crate::Result<()> {
+        let registered = sessions
+            .get(&session_id)
+            .ok_or(crate::Error::InvalidState(format!(
+                "Session {session_id} not found!"
+            )))?;
+        if !Arc::ptr_eq(registered, session) {
+            return Err(crate::Error::InvalidState(format!(
+                "Session {session_id} is registered to a different session!"
+            )));
+        }
+        sessions.remove(&session_id);
+        Ok(())
+    }
+
+    fn validate_decrypted_session_id(
+        encrypted_session_id: Option<u64>,
+        message_session_id: u64,
+    ) -> crate::Result<()> {
+        if let Some(session_id) = encrypted_session_id
+            && message_session_id != session_id
+        {
+            return Err(crate::Error::InvalidMessage(format!(
+                "Encrypted transform session ID {session_id} does not match decrypted message session ID {message_session_id}."
+            )));
+        }
+        Ok(())
+    }
+
     /// Notifies that the connection negotiation has been completed,
     /// with the given [`ConnectionInfo`].
     pub async fn negotiated(&self, neg_info: &ConnectionInfo) -> crate::Result<()> {
@@ -73,10 +126,8 @@ impl Transformer {
         }
 
         let session_id = { session.read().await?.session_id };
-        self.sessions
-            .write()
-            .await?
-            .insert(session_id, session.clone());
+        let mut sessions = self.sessions.write().await?;
+        Self::register_session(&mut sessions, session_id, session)?;
 
         log::trace!(
             "Session {} started and inserted to worker {:p}.",
@@ -93,13 +144,8 @@ impl Transformer {
         session: &Arc<RwLock<SessionAndChannel>>,
     ) -> crate::Result<()> {
         let session_id = { session.read().await?.session_id };
-        self.sessions
-            .write()
-            .await?
-            .remove(&session_id)
-            .ok_or(crate::Error::InvalidState(format!(
-                "Session {session_id} not found!",
-            )))?;
+        let mut sessions = self.sessions.write().await?;
+        Self::unregister_session(&mut sessions, session_id, session)?;
 
         log::trace!(
             "Session {} ended and removed from worker {:p}.",
@@ -267,8 +313,10 @@ impl Transformer {
         let mut form = MessageForm::default();
 
         // 3. Decrpt
+        let mut encrypted_session_id = None;
         let (message, raw) = if let Response::Encrypted(encrypted_message) = message {
             let session_id = encrypted_message.header.session_id;
+            encrypted_session_id = Some(session_id);
 
             let mut decryptor = self
                 ._with_session(session_id, |session| {
@@ -316,6 +364,8 @@ impl Transformer {
             _ => panic!("Unexpected message type"),
         };
 
+        Self::validate_decrypted_session_id(encrypted_session_id, message.header.session_id)?;
+
         let iovec = IoVec::from(raw);
         // If fails, return TranformFailed, with message id.
         // this allows to notify the error to the task that was waiting for this message.
@@ -351,11 +401,18 @@ impl Transformer {
         raw: &IoVec,
         form: &mut MessageForm,
     ) -> crate::Result<()> {
+        // Session setup owns validation of its responses. The final authentication
+        // token may establish the key needed to verify the same response, and a
+        // one-round exchange does not have a registered session to look up yet.
+        if message.header.command == Command::SessionSetup {
+            return Ok(());
+        }
+
         // Check if signing check is required.
         if form.encrypted
             || message.header.message_id == u64::MAX
             || message.header.status == Status::Pending as u32
-            || !(message.header.flags.signed() || self.is_message_signed_ksmbd(message).await)
+            || !message.header.flags.signed()
         {
             return Ok(());
         }
@@ -379,6 +436,16 @@ impl Transformer {
             })
             .await?;
 
+        Self::verify_incoming_signature(message, raw, form, &mut signer)?;
+        Ok(())
+    }
+
+    pub(crate) fn verify_incoming_signature(
+        message: &mut PlainResponse,
+        raw: &IoVec,
+        form: &mut MessageForm,
+        signer: &mut crate::session::MessageSigner,
+    ) -> crate::Result<()> {
         signer.verify_signature(&mut message.header, raw)?;
         log::debug!(
             "Message #{} verified (signature={}).",
@@ -388,41 +455,53 @@ impl Transformer {
         form.signed = true;
         Ok(())
     }
+}
 
-    /// (Internal)
-    ///
-    /// ksmbd multichannel setup compatibility check.
-    ///
-    // ksmbd has a subtle, but irritating bug, where it does not set the "signed" flag
-    // for responses during multi channel session setups. To resolve this, we check if the
-    // current channel is defined as "binding-only" channel. The feature `ksmbd-multichannel-compat`
-    // must also be enabled, or else this code will not be compiled.
-    // This behavior is actually against the spec - MS-SMB2 3.2.4.1.1:
-    // > "If the client signs the request, it MUST set the SMB2_FLAGS_SIGNED bit in the Flags field of the SMB2 header."
-    #[maybe_async]
-    async fn is_message_signed_ksmbd(&self, _message: &PlainResponse) -> bool {
-        #[cfg(feature = "ksmbd-multichannel-compat")]
-        {
-            if _message.header.command != Command::SessionSetup || _message.header.signature == 0 {
-                return false;
-            }
+#[cfg(test)]
+mod tests {
+    use std::{collections::HashMap, sync::Arc};
 
-            let session_id = _message.header.session_id;
-            let is_binding = self
-                ._with_channel(session_id, |session| {
-                    let channel_info = session.channel.as_ref().ok_or(crate::Error::Other(
-                        "Get channel info for ksmbd sign test failed",
-                    ))?;
+    use super::Transformer;
+    use crate::{
+        session::{SessionAndChannel, SessionInfo, SessionKind},
+        sync_helpers::RwLock,
+    };
 
-                    Ok(channel_info.is_binding())
-                })
-                .await;
+    fn test_session(session_id: u64) -> Arc<RwLock<SessionAndChannel>> {
+        let session = Arc::new(RwLock::new(SessionInfo::new(
+            session_id,
+            SessionKind::Authenticated,
+        )));
+        Arc::new(RwLock::new(SessionAndChannel::new(session_id, session)))
+    }
 
-            return matches!(is_binding, Ok(true));
-        }
+    #[test]
+    fn rejects_duplicate_session_registration_without_replacing_original() {
+        let mut sessions = HashMap::new();
+        let original = test_session(42);
+        let duplicate = test_session(42);
 
-        #[cfg(not(feature = "ksmbd-multichannel-compat"))]
-        return false;
+        Transformer::register_session(&mut sessions, 42, &original).unwrap();
+        assert!(Transformer::register_session(&mut sessions, 42, &duplicate).is_err());
+        assert!(Arc::ptr_eq(sessions.get(&42).unwrap(), &original));
+    }
+
+    #[test]
+    fn cleanup_cannot_remove_a_different_session_with_the_same_id() {
+        let mut sessions = HashMap::new();
+        let original = test_session(42);
+        let other = test_session(42);
+
+        Transformer::register_session(&mut sessions, 42, &original).unwrap();
+        assert!(Transformer::unregister_session(&mut sessions, 42, &other).is_err());
+        assert!(Arc::ptr_eq(sessions.get(&42).unwrap(), &original));
+    }
+
+    #[test]
+    fn encrypted_transform_must_match_decrypted_session_id() {
+        assert!(Transformer::validate_decrypted_session_id(Some(42), 42).is_ok());
+        assert!(Transformer::validate_decrypted_session_id(None, 7).is_ok());
+        assert!(Transformer::validate_decrypted_session_id(Some(42), 7).is_err());
     }
 }
 

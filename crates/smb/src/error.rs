@@ -47,6 +47,19 @@ pub enum Error {
 
     #[error("Signature verification failed!")]
     SignatureVerificationFailed,
+    /// The supplied credentials were rejected during authentication.
+    #[error(
+        "Logon failure: {}{}",
+        Status::try_display_as_status(*status),
+        display_optional_sspi_error(source)
+    )]
+    LogonFailure {
+        /// The status exposed to SMB callers for the authentication failure.
+        status: u32,
+        /// The underlying SSPI failure, when authentication failed locally.
+        #[source]
+        source: Option<sspi::Error>,
+    },
     #[error("Unexpected message status: {}.", Status::try_display_as_status(*.0))]
     UnexpectedMessageStatus(u32),
     // TODO: This vs UnexpectedMessageStatus?!
@@ -126,8 +139,86 @@ pub enum Error {
     Other(&'static str),
 }
 
+fn display_optional_sspi_error(error: &Option<sspi::Error>) -> String {
+    error
+        .as_ref()
+        .map(|error| format!("; caused by {error}"))
+        .unwrap_or_default()
+}
+
 impl<T> From<PoisonError<T>> for Error {
     fn from(_: PoisonError<T>) -> Self {
         Error::LockError
+    }
+}
+
+impl Error {
+    pub(crate) fn normalize_authentication_error(self) -> Self {
+        match self {
+            Self::UnexpectedMessageStatus(status) if status == Status::LogonFailure as u32 => {
+                Self::LogonFailure {
+                    status,
+                    source: None,
+                }
+            }
+            Self::SspiError(error)
+                if error.error_type == sspi::ErrorKind::LogonDenied
+                    || (error.error_type == sspi::ErrorKind::KdcInvalidRequest
+                        && error
+                            .description
+                            .contains("pre-authentication information was invalid")) =>
+            {
+                Self::LogonFailure {
+                    status: Status::LogonFailure as u32,
+                    source: Some(error),
+                }
+            }
+            error => error,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalizes_smb_logon_failure() {
+        let normalized = Error::UnexpectedMessageStatus(Status::LogonFailure as u32)
+            .normalize_authentication_error();
+        assert!(matches!(
+            &normalized,
+            Error::LogonFailure {
+                status: Status::U32_LOGON_FAILURE,
+                source: None,
+            }
+        ));
+        assert_eq!(
+            normalized.to_string(),
+            "Logon failure: Logon Failure (0xc000006d)"
+        );
+    }
+
+    #[test]
+    fn normalizes_kerberos_bad_password() {
+        let error = sspi::Error::new(
+            sspi::ErrorKind::KdcInvalidRequest,
+            "pre-authentication information was invalid",
+        );
+        let normalized = Error::SspiError(error).normalize_authentication_error();
+        assert!(matches!(
+            &normalized,
+            Error::LogonFailure {
+                status: Status::U32_LOGON_FAILURE,
+                source: Some(sspi::Error {
+                    error_type: sspi::ErrorKind::KdcInvalidRequest,
+                    ..
+                }),
+            }
+        ));
+        assert_eq!(
+            normalized.to_string(),
+            "Logon failure: Logon Failure (0xc000006d); caused by KdcInvalidRequest: pre-authentication information was invalid"
+        );
     }
 }

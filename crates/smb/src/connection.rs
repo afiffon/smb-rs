@@ -9,7 +9,11 @@ use crate::connection::preauth_hash::PreauthHashState;
 use crate::dialects::DialectImpl;
 use crate::session::ChannelMessageHandler;
 use crate::sync_helpers::*;
-use crate::{Error, crypto, msg_handler::*, session::Session};
+use crate::{
+    Error, crypto,
+    msg_handler::*,
+    session::{Session, SessionCredentials},
+};
 use binrw::prelude::*;
 pub use config::*;
 use connection_info::{ConnectionInfo, NegotiatedProperties};
@@ -513,8 +517,21 @@ impl Connection {
     /// ## Notes:
     /// * Use the [`ConnectionConfig`] to configure authentication options.
     pub async fn authenticate(&self, identity: sspi::AuthIdentity) -> crate::Result<Session> {
+        self.authenticate_with(SessionCredentials::Authenticated(identity))
+            .await
+    }
+
+    /// Starts an anonymous null session for this connection.
+    pub async fn authenticate_null(&self) -> crate::Result<Session> {
+        self.authenticate_with(SessionCredentials::Null).await
+    }
+
+    pub(crate) async fn authenticate_with(
+        &self,
+        credentials: SessionCredentials,
+    ) -> crate::Result<Session> {
         let session = Session::create(
-            identity,
+            credentials,
             &self.handler,
             self.handler.conn_info.get().unwrap(),
         )
