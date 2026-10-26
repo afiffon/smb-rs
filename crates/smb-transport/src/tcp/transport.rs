@@ -163,6 +163,7 @@ impl TcpTransport {
     #[inline]
     async fn do_connect(&mut self, _server_name: &str, server_address: SocketAddr) -> Result<()> {
         let socket = self.connect_timeout(&server_address).await?;
+        socket.set_nodelay(true)?;
         let (r, w) = Self::split_socket(socket);
         self.reader = Some(r);
         self.writer = Some(w);
