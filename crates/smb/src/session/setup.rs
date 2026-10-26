@@ -228,6 +228,10 @@ where
             .last_setup_response
             .take()
             .ok_or_else(|| Error::InvalidState("Missing final session setup response.".into()))?;
+        if response.session_flags.is_guest_or_null_session() {
+            self.flags = Some(response.session_flags);
+            return Ok(());
+        }
         let session_key = self.authenticator.session_key()?;
         // A successful SMB reply may carry the last SPNEGO token. Consume it
         // locally; sending another setup request would restart a completed exchange.
