@@ -128,8 +128,16 @@ pub trait Worker: Sized + std::fmt::Debug {
             async_msg_ids.set(options.msg_id, async_id);
         }
 
+        // The server grants credits on the interim (STATUS_PENDING) response
+        // (MS-SMB2 3.3.4.2) and may grant none on the final one. Only the final
+        // response reaches the connection's credit accounting
+        // (`process_sequence_incoming`), so the interim grants are carried over
+        // to it; otherwise every request that goes pending leaks its credits
+        // and the connection eventually blocks forever acquiring them.
+        let mut interim_grants: u16 = curr.message.header.credit_request;
+
         loop {
-            let msg = self.receive_next_cancellable(options).await?;
+            let mut msg = self.receive_next_cancellable(options).await?;
 
             // Check if the message is async and has the same ID.
             if !msg.message.header.flags.async_command()
@@ -149,8 +157,14 @@ pub trait Worker: Sized + std::fmt::Debug {
 
             // We've got a result!
             if msg.message.header.status != Status::Pending as u32 {
+                msg.message.header.credit_request = msg
+                    .message
+                    .header
+                    .credit_request
+                    .saturating_add(interim_grants);
                 return Ok(msg);
             }
+            interim_grants = interim_grants.saturating_add(msg.message.header.credit_request);
 
             log::debug!(
                 "Received another async pending message with ID {} and status {}.",
