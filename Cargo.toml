@@ -4,7 +4,7 @@ resolver = "2"
 
 [workspace.package]
 edition = "2024"
-rust-version = "1.89.0"
+rust-version = "1.93.0"
 license = "MIT"
 description = "A Pure Rust SMB Client implementation"
 repository = "https://github.com/afiffon/smb-rs"
