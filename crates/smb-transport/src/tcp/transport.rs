@@ -163,6 +163,7 @@ impl TcpTransport {
     #[inline]
     async fn do_connect(&mut self, _server_name: &str, server_address: SocketAddr) -> Result<()> {
         let socket = self.connect_timeout(&server_address).await?;
+        socket.set_nodelay(true)?;
         let (r, w) = Self::split_socket(socket);
         self.reader = Some(r);
         self.writer = Some(w);
@@ -240,5 +241,49 @@ impl SmbTransportRead for TcpTransport {
             .ok_or(TransportError::NotConnected)?
             .set_read_timeout(Some(timeout))
             .map_err(|e| e.into())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Duration, SmbTransport, TcpTransport};
+
+    #[maybe_async::test(not(feature = "async"), async(feature = "async", tokio::test))]
+    async fn connected_streams_disable_nagle() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+
+        for timeout in [Duration::ZERO, Duration::from_secs(5)] {
+            let mut transport = TcpTransport::new(timeout);
+            transport.connect("localhost", address).await.unwrap();
+            let (_peer, _) = listener.accept().unwrap();
+
+            #[cfg(feature = "async")]
+            {
+                assert!(
+                    transport
+                        .reader
+                        .as_ref()
+                        .unwrap()
+                        .as_ref()
+                        .nodelay()
+                        .unwrap()
+                );
+                assert!(
+                    transport
+                        .writer
+                        .as_ref()
+                        .unwrap()
+                        .as_ref()
+                        .nodelay()
+                        .unwrap()
+                );
+            }
+            #[cfg(not(feature = "async"))]
+            {
+                assert!(transport.reader.as_ref().unwrap().nodelay().unwrap());
+                assert!(transport.writer.as_ref().unwrap().nodelay().unwrap());
+            }
+        }
     }
 }

@@ -42,6 +42,7 @@ maybe-async = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
+tokio = { workspace = true, features = ["rt"] }
 smb-tests = { workspace = true }
 
 [features]
